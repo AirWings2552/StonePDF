@@ -1,0 +1,13 @@
+.bookMark {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 20vw;
+    height: 100%;
+    border-right: 1px solid #ccc;
+    left: 0;
+    background-color: rgb(198, 198, 203);
+    z-index: 99;
+}

@@ -1,0 +1,226 @@
+:root {
+  --bg: #eaf3ff;
+  --panel: rgba(255,255,255,.55);   
+  --stroke: rgba(255,255,255,.65);  
+  --stroke-2: rgba(15, 58, 128, .08);
+  --text: #0f2b5b;                  
+  --subtext: #3b6ea8;               
+  --blue: #0a84ff;                  
+  --radius: 12px;
+  --radius-lg: 18px;
+  --gap: 10px;
+  --pad: 10px;
+  --shadow: 0 22px 60px -24px rgba(30,64,175,.35);
+}
+
+.toolBar {
+  flex-wrap: wrap;
+  gap: var(--gap);
+  padding: 12px var(--pad);
+  color: var(--text);
+
+  /* Glass Mimic Card */
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-bottom-color: var(--stroke);
+  border-radius: 16px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+}
+
+/* Unified button: micro glass + rounded corners + thin stroke + light shadow */
+.toolBar > button,
+.toolBar > .jump-bar > button,
+.toolBar > .search-bar > button {
+  background: rgba(255,255,255,.68);
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 10px 24px -16px rgba(30,64,175,.35);
+  transition: background .15s ease, transform .06s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.toolBar > button:hover,
+.toolBar > .jump-bar > button:hover,
+.toolBar > .search-bar > button:hover {
+  background: rgba(255,255,255,.9);
+  border-color: rgba(255,255,255,.9);
+  box-shadow: 0 14px 32px -18px rgba(30,64,175,.45);
+}
+
+.toolBar > button:active,
+.toolBar > .jump-bar > button:active,
+.toolBar > .search-bar > button:active {
+  transform: translateY(1px);
+}
+
+.toolBar > button.primary,
+.toolBar > .jump-bar > button.primary,
+.toolBar > .search-bar > button.primary {
+  background: rgba(10,132,255,.12);
+  border-color: rgba(10,132,255,.35);
+  color: var(--blue);
+}
+.toolBar > button.primary:hover,
+.toolBar > .jump-bar > button.primary:hover,
+.toolBar > .search-bar > button.primary:hover {
+  background: rgba(10,132,255,.18);
+  border-color: rgba(10,132,255,.5);
+}
+
+.toolBar > .jump-bar > input {
+  width: 56px;
+  text-align: center;
+  margin: 0 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: rgba(255,255,255,.65);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  outline: none;
+  transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
+  box-shadow: inset 0 0 0 0 rgba(10,132,255,0);
+}
+
+.toolBar > .jump-bar > input::placeholder {
+  color: var(--subtext);
+  opacity: .7;
+}
+
+.toolBar > .jump-bar > input:hover {
+  background: rgba(255,255,255,.8);
+}
+
+.toolBar > .jump-bar > input:focus {
+  border-color: rgba(10,132,255,.45);
+  box-shadow: 0 0 0 3px rgba(10,132,255,.15);
+  background: rgba(255,255,255,.92);
+}
+
+.toolBar .search-bar input[type="text"],
+.toolBar .search-bar input[type="search"] {
+  min-width: 180px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: rgba(255,255,255,.6);
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  outline: none;
+  transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
+}
+.toolBar .search-bar input[type="text"]:hover,
+.toolBar .search-bar input[type="search"]:hover {
+  background: rgba(255,255,255,.8);
+}
+.toolBar .search-bar input[type="text"]:focus,
+.toolBar .search-bar input[type="search"]:focus {
+  border-color: rgba(10,132,255,.45);
+  box-shadow: 0 0 0 3px rgba(10,132,255,.15);
+  background: rgba(255,255,255,.95);
+}
+
+
+.toolBar input[type="file"] {
+  color: var(--subtext);
+  background: rgba(255,255,255,.5);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 6px 8px;
+  box-shadow: 0 10px 24px -16px rgba(30,64,175,.2);
+}
+.toolBar input[type="file"]:hover {
+  background: rgba(255,255,255,.75);
+}
+
+
+.pdfViewer .page { position: relative; }
+
+.markLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  isolation: isolate;
+  mix-blend-mode:multiply;
+}
+
+
+.mark { position: absolute;pointer-events:auto}
+.mark.highlight { background: #FFBF00;pointer-events:auto;color: #3b6ea8;z-index: 999;}
+.mark.underline { height: 0; border-bottom: 3px solid #00c3ff; pointer-events:auto}
+.mark.strike { height: 0; border-top: 3px solid #ff0505;pointer-events:auto }
+
+.mark.highlight:focus {
+  border: 2px solid #3b6ea8;   
+  border-radius: 2px;
+}
+
+
+.mark.freetext{
+  position:absolute;
+  pointer-events:auto;
+  box-sizing:border-box;
+  line-height:1;
+  white-space:pre-wrap;
+  word-break:break-word;
+  padding:6px 8px;
+  border-radius:6px;
+  border:1px solid rgba(84, 160, 255, 0.35);
+  background: var(--ft-bg, rgba(40, 90, 200, 0.15));
+  color: var(--ft-fg, #0d1b2a);
+  font-size: var(--ft-size, 12px);
+  box-shadow: 0 2px 6px rgba(0, 50, 150, 0.12);
+  
+  /* Adaptive + user-resizeable */
+  resize: both;
+  overflow: auto;
+  min-width: 80px;
+  min-height: 28px;
+  max-width: 70%;
+  cursor: text;
+  transition: box-shadow 0.2s ease, border 0.2s ease;
+  
+}
+
+/* While dragging (hold down Alt */
+.mark.freetext.dragging{
+  cursor: move;
+  user-select: none;
+  border:1px solid rgba(84,160,255,0.6);
+  box-shadow: 0 4px 10px rgba(0, 80, 200, 0.25);
+}
+
+/* Placeholder hint (empty content) */
+.mark.freetext:empty:before{
+  content: attr(data-placeholder);
+  color: rgba(84,160,255,0.6);
+}
+
+.print-container {
+    display: none;
+}
+
+@media print {
+
+    body > *:not(.print-container) {
+        display: none;
+    }
+
+    .print-container {
+        display: block;
+    }
+
+    .print-container .print-page {
+
+        width: 100%;
+        height: auto;
+        
+
+        page-break-after: always;
+        page-break-inside: avoid;
+    }
+}

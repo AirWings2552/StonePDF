@@ -1,0 +1,27 @@
+﻿StonePDF 软件最终用户许可协议 (EULA)
+StonePDF Software End User License Agreement (EULA)
+
+请在安装 StonePDF (以下简称“本 software”) 前仔细阅读以下条款。
+点击“我接受”并安装本 software，即表示您同意受本协议所有条款的约束。
+Please read the following terms carefully before installing StonePDF (hereinafter referred to as "the Software").
+By clicking "I Agree" and installing the Software, you agree to be bound by all terms of this agreement.
+
+许可证授予 (License Grant)
+本软件 (StonePDF) 源代码基于 MIT 许可证开源。
+The source code of this Software (StonePDF) is open-sourced under the MIT License.
+
+Copyright (c) 2025 AirWings2552
+
+根据 MIT 许可证，您可以免费使用、复制、修改、合并、出版发行、散布、再授权及贩售本软件及其副本。
+Under the MIT License, you are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.
+
+第三方组件 (Third-Party Components)
+本软件包含多个第三方开源组件（如 PDF.js, Electron, Noto Sans SC 等）。这些组件受其各自的原始许可证（如 Apache-2.0, SIL OFL 1.1）管辖。
+This Software contains multiple third-party open-source components (e.g., PDF.js, Electron, Noto Sans SC, etc.). These components are governed by their own respective original licenses (e.g., Apache-2.0, SIL OFL 1.1).
+
+安装本软件，即表示您亦同意遵守这些第三方组件的许可条款。完整的第三方许可声明包含在本软件的安装目录下的 "THIRD_PARTY_NOTICES.txt" 文件中。
+By installing this Software, you also agree to comply with the license terms of these third-party components. The complete third-party license notices are included in the "THIRD_PARTY_NOTICES.txt" file located in the software's installation directory.
+
+免责声明 (Disclaimer of Warranty)
+本软件按“原样”提供，不提供任何明示或暗示的保证。在任何情况下，作者或版权持有人均不对因使用本软件而导致的任何索赔、损害或其他责任承担责任。
+The Software is provided "AS IS", without warranty of any kind, express or implied. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from the use of the Software.

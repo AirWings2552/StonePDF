@@ -1,0 +1,112 @@
+{
+  "name": "stonepdf",
+  "private": true,
+  "version": "0.6.0",
+  "type": "module",
+  "main": "electron-main.js",
+  "scripts": {
+    "dev:react": "vite",
+    "dev:electron": "cross-env ELECTRON_START_URL=http://localhost:5173 electron .",
+    "dev": "concurrently -k \"npm:dev:react\" \"npm:dev:electron\"",
+    "build:react": "vite build",
+    "start": "electron .",
+    "dist": "npm run build:react && electron-builder",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "better-sqlite3": "^12.4.1",
+    "canvas": "^3.2.0",
+    "lucide-react": "^0.544.0",
+    "pdf-lib": "^1.17.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.1",
+    "serve-handler": "^6.1.6",
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@eslint/js": "^9.33.0",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/pdfjs-dist": "^2.10.377",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^38.2.1",
+    "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9",
+    "eslint": "^9.33.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.13",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.39.1",
+    "vite": "^7.1.2"
+  },
+  "build": {
+    "appId": "com.airwings.stonepdf",
+    "productName": "StonePDF",
+    "asar": true,
+    "asarUnpack": [
+      "**/better-sqlite3/**"
+    ],
+    "files": [
+      "dist/**/*",
+      "electron-main.js",
+      "preload.js",
+      "src/assets/localization/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets"
+      },
+      {
+        "from": "src/assets/localization",
+        "to": "localization"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/stonePDF_logo_v3.ico"
+    },
+    "nsis": {
+      "oneClick": false,                         
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,                       
+      "license": "LICENSE.txt",  
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "StonePDF"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/stonePDF_logo_v3.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/stonePDF_logo_v3.icns"
+    },
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF document",
+        "description": "Portable Document Format",
+        "mimeType": "application/pdf",
+        "role": "Viewer",
+        "icon": "build/stonePDF_logo_v3.ico"
+      }
+    ]
+  }
+}
