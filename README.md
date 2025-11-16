@@ -79,7 +79,7 @@ This project (StonePDF) source code is released under the **MIT License**.
 
 You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.
 
-**Copyright (c) 2025 [Your Name]**
+**Copyright (c) 2025 AirWings2552**
 
 > Note: This project includes third-party components (e.g., PDF.js) which are governed by their own respective licenses (e.g., Apache-2.0). When distributing compiled versions of this software, please ensure the inclusion of the corresponding third-party license declaration file (`THIRD_PARTY_NOTICES.txt`).
 
