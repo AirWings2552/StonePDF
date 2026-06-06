@@ -75,6 +75,7 @@ export default function PdfViewer() {
   const [showMenu,setShowMenu] = useState<boolean>(false);
 
   const [docKey, setDocKey] = useState<string>();// it is the hash of the PDF file content, the same as docId in docStore
+  const docKeyRef = useRef<string | undefined>(undefined);
   const [bookMarkVisible,setBookMarkVisible] = useState<boolean>(false);
   const enablePreview = useRef<boolean>(true);
   const [enablePreviewState,setEnablePreviewState] = useState<boolean>(true);
@@ -84,8 +85,10 @@ export default function PdfViewer() {
   const targetPath = useDocStore((s) => (id ? s.docs[id]?.path : undefined));
 
   
-  const { savePdfCtx, langMap,documentStates,registerSaveAction, unregisterSaveAction} = useOutletContext<AppOutletCtx>();
+  const { savePdfCtx, langMap,documentStates,setDocumentDirty,registerSaveAction, unregisterSaveAction} = useOutletContext<AppOutletCtx>();
   const [hasRestored,setHasRestored] = useState(false);
+  const [progressReady, setProgressReady] = useState(false);
+  const progressReadyRef = useRef(false);
 
   const [cursorMode,setCursorMode] = useState<"select" | "pen" | "eraser">("select");
   const currentHistoryRef = useRef<number[]>([]); 
@@ -112,11 +115,11 @@ export default function PdfViewer() {
       });
 
       if(id != undefined)
-        documentStates.current[id] = false;
+        setDocumentDirty(id, false);
 
       return;
     }
-  }, [documentStates, id, langMap, targetPath]);
+  }, [id, langMap, setDocumentDirty, targetPath]);
 
   const handleSaveAsAnotherPdf = useCallback(async () => {
     if (!pdfDocRef.current) return;
@@ -132,38 +135,63 @@ export default function PdfViewer() {
     const a = document.createElement("a");
     const url = URL.createObjectURL(blob);
     if(id != undefined)
-        documentStates.current[id] = false;
+        setDocumentDirty(id, false);
     a.href = url;
     a.download = targetFile ? targetFile.name : "document.pdf";
     a.click();
     URL.revokeObjectURL(url);
-  }, [documentStates, id, targetFile]);
+  }, [id, setDocumentDirty, targetFile]);
   
   useEffect(() => {
     currentPageRef.current = currentPage;
   },[currentPage])
 
   useEffect(() => {
+    docKeyRef.current = docKey;
+  }, [docKey]);
+
+  useEffect(() => {
+    progressReadyRef.current = progressReady;
+  }, [progressReady]);
+
+  useEffect(() => {
     pdfDocRef.current = pdfDoc;    
   }, [pdfDoc]);
 
   useEffect(() => {
-    if(id && hasRestored)
+    if(id && progressReady && docKey === id)
       savePdfCtx(id,currentPage);
-  },[currentPage, hasRestored, id, savePdfCtx])
+  },[currentPage, docKey, id, progressReady, savePdfCtx])
 
   useEffect(() => {
-    const prev = localStorage.getItem(id+"ctx");
-    if(linkServiceRef.current && prev){
-      linkServiceRef.current.page = parseInt(prev);
+    return () => {
+      if (id && progressReadyRef.current && docKeyRef.current === id) {
+        savePdfCtx(id, currentPageRef.current);
+      }
+    };
+  }, [id, savePdfCtx]);
+
+  useEffect(() => {
+    if (!id || !hasRestored || docKey !== id) return;
+    const savedPage = Math.max(1, Math.min(pagesCount || 1, Number(localStorage.getItem(id+"ctx")) || 1));
+    if(linkServiceRef.current){
+      linkServiceRef.current.page = savedPage;
     }
+    currentPageRef.current = savedPage;
+    setCurrentPage(savedPage);
+    setProgressReady(true);
       
-  },[hasRestored, id])
+  },[docKey, hasRestored, id, pagesCount])
 
 
   const loadFile = useCallback(async (f: File | undefined) => {
     if (!f) return;
     console.log("File loaded");
+    setHasRestored(false);
+    setProgressReady(false);
+    progressReadyRef.current = false;
+    setCurrentPage(1);
+    currentPageRef.current = 1;
     
     try { viewerRef.current?.setDocument(null as any); } catch {
       // pdf.js may throw while tearing down an already-detached document.
@@ -189,7 +217,9 @@ export default function PdfViewer() {
     setDocKey(key);
     setPdfDoc(doc);
     setPagesCount(doc.numPages);
-    documentStates.current[key] = false;
+    if (documentStates.current[key] === undefined) {
+      documentStates.current[key] = localStorage.getItem(`dirty::${key}`) === "1";
+    }
 
   }, [documentStates]);
 
@@ -1189,6 +1219,7 @@ export default function PdfViewer() {
     const c = document.createElement("canvas");
     c.width = src.width;
     c.height = src.height;
+    c.style.imageRendering = "auto";
     c.getContext("2d")!.drawImage(src, 0, 0);
     return c;
   }
@@ -1433,10 +1464,10 @@ export default function PdfViewer() {
     canv.height = winPXH;
     canv.style.width = `${size.width}px`;
     canv.style.height = `${size.height}px`;
+    canv.style.imageRendering = "auto";
 
     const ctx = canv.getContext("2d")!;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
+    ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, winPXW, winPXH);
     ctx.drawImage(off, sx, sy, srcW, srcH, 0, 0, winPXW, winPXH);
@@ -1481,12 +1512,16 @@ export default function PdfViewer() {
       }
 
       previewPinnedRef.current = false;
+      const previewPixelRatio = Math.min(
+        3,
+        Math.max(2, (window.devicePixelRatio || 1) * 1.5)
+      );
       previewRenderStateRef.current = {
         pageIndex,
         anchorX,
         anchorY,
-        dpr: Math.max(1, window.devicePixelRatio || 1),
-        zoom: 1.5,
+        dpr: previewPixelRatio,
+        zoom: 2.2,
         focusBiasY: -0.12,
       };
       previewSizeRef.current = { width: 900, height: 300 };

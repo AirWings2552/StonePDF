@@ -90,6 +90,7 @@ export type AppOutletCtx = {
   langMap: Record<string, string>;
   deleteContext:(docId:string,path:string)=>void;
   documentStates: React.RefObject<Record<string, boolean>>;
+  setDocumentDirty: (docId: string, dirty: boolean) => void;
   registerSaveAction:(id: string, action: () => Promise<void>) => void;
   unregisterSaveAction:(id: string) => void;
   sendValueToMain?: (value: string) => number;
@@ -128,12 +129,24 @@ export default function App() {
     localStorage.setItem(docId + "ctx", pdfpageNumber.toString());
   }, []);
 
+  const setDocumentDirty = useCallback((docId: string, dirty: boolean) => {
+    documentStates.current[docId] = dirty;
+    localStorage.setItem(`dirty::${docId}`, dirty ? "1" : "0");
+    setTabs((currentTabs) =>
+      currentTabs.map((tab) => (tab.id === docId ? { ...tab, dirty } : tab))
+    );
+    if (dirty) {
+      window.electronAPI?.sendValueToMain?.("dirty");
+    }
+  }, []);
+
 
   // This function is called when the local file is removed manually.
   // It will remove the corresponding context stored in localStorage.
   // This function is passed down to PdfViewer via Outlet context.
   const deleteContext = useCallback((docId:string, path:string) => {
     localStorage.removeItem(docId + "ctx"); // remove page number record in localStorage
+    localStorage.removeItem(`dirty::${docId}`);
     setRecents((r) => r.filter((item) => item.path !== path)); // remove from recents list
   }, []);
 
@@ -166,7 +179,7 @@ export default function App() {
                 console.log(`正在保存 tab: ${tab.id}`);
                 await saveFn();
                 console.log(`保存完成: ${tab.id}`);
-                documentStates.current[tab.id] = false; 
+                setDocumentDirty(tab.id, false); 
               } catch (e) {
                 console.error("Save failed", e);
                 if (window.electronAPI?.showAlert) {
@@ -184,7 +197,7 @@ export default function App() {
           }
           
           if (choice === 1) {
-            documentStates.current[tab.id] = false;
+            setDocumentDirty(tab.id, false);
           }
         }
       }
@@ -195,7 +208,7 @@ export default function App() {
         removeListener();
       }
     };
-  }, []);
+  }, [setDocumentDirty]);
 
   useEffect(() => {
     if (activeId) navigate(`/viewer/${activeId}`);
@@ -242,11 +255,13 @@ export default function App() {
 
     const id = await add(file, filePath);
     electronPathMap.set(id, filePath);
+    const dirty = localStorage.getItem(`dirty::${id}`) === "1";
+    documentStates.current[id] = dirty;
 
     setTabs((currentTabs) => (
       currentTabs.some((tab) => tab.id === id)
         ? currentTabs
-        : [...currentTabs, { id, title: file.name }]
+        : [...currentTabs, { id, title: file.name, dirty }]
     ));
     setActiveId(id);
 
@@ -307,9 +322,13 @@ export default function App() {
         if (saveFn) {
           await saveFn();
         }
+        setDocumentDirty(id, false);
       }
       else if(choice !== 1){
         return;
+      }
+      else {
+        setDocumentDirty(id, false);
       }
     }
     electronPathMap.delete(id); // Release path mapping
@@ -323,7 +342,8 @@ export default function App() {
     
     
     localStorage.removeItem("marks::" + id);
-  }, [activeId, tabs, unregisterSaveAction]);
+    localStorage.removeItem(`dirty::${id}`);
+  }, [activeId, tabs, unregisterSaveAction, setDocumentDirty]);
 
   const saveRecentList = useCallback(() => {
     localStorage.setItem("recents", JSON.stringify(recents));
@@ -363,6 +383,12 @@ export default function App() {
         if (!keep.has(docId)) {
         localStorage.removeItem(k); // 直接删当前键 k
       }
+      }
+      if (k.startsWith("dirty::")) {
+        const docId = k.slice("dirty::".length);
+        if (!keep.has(docId)) {
+          localStorage.removeItem(k);
+        }
       }
       
     }
@@ -433,6 +459,7 @@ export default function App() {
     langMap,
     deleteContext,
     documentStates,
+    setDocumentDirty,
     registerSaveAction,
     unregisterSaveAction,
     sendValueToMain: window.electronAPI?.sendValueToMain,
@@ -445,6 +472,7 @@ export default function App() {
     langMap,
     deleteContext,
     documentStates,
+    setDocumentDirty,
     registerSaveAction,
     unregisterSaveAction,
   ]);

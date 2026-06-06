@@ -31,9 +31,9 @@ export default function PopupWindow({
         eventBus: eventBusRef.current!,
         fingerprint: pdfDocFingerprint!,
         mode:cursorMode,
-        viewer:viewer
+        viewer:viewer!
     });
-  const {langMap,documentStates,sendValueToMain} = useOutletContext<AppOutletCtx>();
+  const {langMap,setDocumentDirty} = useOutletContext<AppOutletCtx>();
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -111,8 +111,7 @@ export default function PopupWindow({
 
                 addFreeText(info.pageEl, { x, y, w, h });
                 if(pdfDocFingerprint != undefined) {
-                  documentStates.current[pdfDocFingerprint] = true; //isDirty
-                  sendValueToMain?.("dirty");
+                  setDocumentDirty(pdfDocFingerprint, true);
                 }
               }
             }
@@ -139,8 +138,7 @@ export default function PopupWindow({
             if (info) {
               addLineMark(info.pageEl, "highlight");
               if(pdfDocFingerprint != undefined) {
-                documentStates.current[pdfDocFingerprint] = true;
-                sendValueToMain?.("dirty");
+                setDocumentDirty(pdfDocFingerprint, true);
               }
             }
         }, 0);

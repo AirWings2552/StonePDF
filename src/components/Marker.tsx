@@ -93,13 +93,16 @@ function growFreeTextHeight(node: HTMLElement) {
 
 export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: string; mode:"select" | "pen" | "eraser" ;viewer:PDFViewer}) {
     const { eventBus, fingerprint ,mode} = opts;
-    const {langMap} = useOutletContext<AppOutletCtx>();
+    const {langMap,setDocumentDirty} = useOutletContext<AppOutletCtx>();
+
+    const markDirty = useCallback(() => {
+      setDocumentDirty(fingerprint, true);
+    }, [fingerprint, setDocumentDirty]);
 
     const renderMarksOnPage = useCallback((pageEl: HTMLElement, marks: Mark[]) => {
       const pageNo = getPageNumber(pageEl);
       const layer = ensureMarkLayer(pageEl);
       layer.innerHTML = "";
-
       const layerBox = layer.getBoundingClientRect();
       const W = layerBox.width || layer.clientWidth;
       const H = layerBox.height || layer.clientHeight;
@@ -176,6 +179,33 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
           n.dataset.placeholder = langMap["holdAltToDrag"] || "按住 Alt 拖动";
           n.innerText = m.text || "";
 
+          n.contentEditable = "false";
+          n.innerHTML = "";
+
+          const bar = document.createElement("div");
+          bar.className = "freetext-bar";
+
+          const grip = document.createElement("span");
+          grip.className = "freetext-grip";
+          grip.setAttribute("aria-hidden", "true");
+          bar.appendChild(grip);
+
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "freetext-delete";
+          del.textContent = "X";
+          del.setAttribute("aria-label", "Delete text box");
+          bar.appendChild(del);
+
+          const body = document.createElement("div");
+          body.className = "freetext-body";
+          body.contentEditable = "plaintext-only";
+          body.dataset.placeholder = langMap["freeText"] || "Text";
+          body.innerText = m.text || "";
+
+          n.appendChild(bar);
+          n.appendChild(body);
+
           let dragging = false;
           let startX = 0, startY = 0;     
           let startLeft = 0, startTop = 0;
@@ -195,6 +225,21 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
             startY = ev.clientY;
             startLeft = parseFloat(n.style.left) || 0;
             startTop  = parseFloat(n.style.top)  || 0;
+
+            n.setPointerCapture?.(ev.pointerId);
+            ev.preventDefault();
+            ev.stopPropagation();
+          });
+
+          bar.addEventListener("pointerdown", (ev) => {
+            if (ev.button !== 0 || ev.target === del) return;
+            dragging = true;
+            n.classList.add("dragging");
+
+            startX = ev.clientX;
+            startY = ev.clientY;
+            startLeft = parseFloat(n.style.left) || 0;
+            startTop = parseFloat(n.style.top) || 0;
 
             n.setPointerCapture?.(ev.pointerId);
             ev.preventDefault();
@@ -225,10 +270,21 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
                 : mm
             );
             saveMarks(fingerprint, all);
+            markDirty();
           };
 
           window.addEventListener("pointermove", onPointerMove);
           window.addEventListener("pointerup", onPointerUp);
+
+          del.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+          del.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const all = loadMarks(fingerprint).filter(mm => mm.id !== m.id);
+            saveMarks(fingerprint, all);
+            markDirty();
+            n.remove();
+          });
 
           // Text editing: Lose focus or press Enter to save
       // Text editing: Lose focus or press Enter to save
@@ -237,11 +293,12 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
             const all = loadMarks(fingerprint).map(mm => mm.id === m.id && mm.type==="freetext"
              ? { 
                   ...mm, 
-                  text: n.innerText,
+                  text: body.innerText,
                   box: measureFreeTextBox(n, layer)
                 }
              : mm);
             saveMarks(fingerprint, all);
+            markDirty();
           };
           n.addEventListener("input", () => {
             growFreeTextHeight(n);
@@ -250,12 +307,19 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
           n.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) n.blur();
           });
+          body.addEventListener("input", () => {
+            growFreeTextHeight(n);
+          });
+          body.addEventListener("blur", persistText);
+          body.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) body.blur();
+          });
 
           layer.appendChild(n);
           continue;
         }
       }
-    }, [fingerprint, langMap]);
+    }, [fingerprint, langMap, markDirty]);
 
     const rerenderAll = useCallback((marks: Mark[]) => {
       document
@@ -269,8 +333,9 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
 
       const filtered = raw.filter(m => m.id !== id);
       saveMarks(docId, filtered);
+      setDocumentDirty(docId, true);
       rerenderAll(filtered);
-    }, [rerenderAll]);
+    }, [rerenderAll, setDocumentDirty]);
 
     useEffect(() => {
       if (mode !== "eraser") return;
@@ -358,9 +423,10 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
       const all = loadMarks(fingerprint);
       all.push(m);
       saveMarks(fingerprint,all);
+      markDirty();
       renderMarksOnPage(pageEl, all);
     },
-    [fingerprint, rectsFromSelection, renderMarksOnPage],
+    [fingerprint, markDirty, rectsFromSelection, renderMarksOnPage],
   );
 
   const addNote = useCallback((pageEl: HTMLElement, point: Point, text: string) => {
@@ -374,19 +440,22 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
     const all = loadMarks(fingerprint);
     all.push(m);
     saveMarks(fingerprint,all);
+    markDirty();
     renderMarksOnPage(pageEl, all);
-  }, [fingerprint, renderMarksOnPage]);
+  }, [fingerprint, markDirty, renderMarksOnPage]);
 
   const removeMark = useCallback((id: string) => {
     const all = loadMarks(fingerprint).filter((m) => m.id !== id);
     saveMarks(fingerprint,all);
+    markDirty();
     rerenderAll(all);
-  }, [fingerprint, rerenderAll]);
+  }, [fingerprint, markDirty, rerenderAll]);
 
   const clearAllMarks = useCallback(() => {
     saveMarks(fingerprint,[]);
+    markDirty();
     rerenderAll([]);
-  }, [fingerprint, rerenderAll]);
+  }, [fingerprint, markDirty, rerenderAll]);
 
   const addFreeText = useCallback((pageEl: HTMLElement, box: Rect, text = "", opts?: {
     fontSize?: number; textColor?: string; bgColor?: string; border?: boolean
@@ -403,8 +472,9 @@ export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: str
     const all = loadMarks(fingerprint);
     all.push(m);
     saveMarks(fingerprint, all);
+    markDirty();
     renderMarksOnPage(pageEl, all);
-  }, [fingerprint, renderMarksOnPage]);
+  }, [fingerprint, markDirty, renderMarksOnPage]);
     
   return { addLineMark, addNote, removeMark ,clearAllMarks,addFreeText};
 }

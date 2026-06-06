@@ -212,12 +212,12 @@
   position:absolute;
   pointer-events:auto;
   box-sizing:border-box;
-  line-height:1;
-  white-space:pre-wrap;
-  word-break:break-word;
-  padding:6px 8px;
+  display:flex;
+  flex-direction:column;
+  line-height:1.25;
+  padding:0;
   border-radius:6px;
-  border:1px solid rgba(84, 160, 255, 0.35);
+  border:1px solid rgba(37, 99, 235, 0.45);
   background: var(--ft-bg, rgba(40, 90, 200, 0.15));
   color: var(--ft-fg, #0d1b2a);
   font-size: var(--ft-size, 12px);
@@ -231,10 +231,68 @@
   max-width: 70%;
   cursor: text;
   transition: box-shadow 0.2s ease, border 0.2s ease;
-  
+  isolation:isolate;
 }
 
-/* While dragging (hold down Alt */
+.mark.freetext .freetext-bar{
+  flex:0 0 24px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  box-sizing:border-box;
+  padding:3px 4px 3px 8px;
+  background:linear-gradient(180deg, rgba(239,246,255,0.96), rgba(191,219,254,0.88));
+  border-bottom:1px solid rgba(37,99,235,0.35);
+  cursor:grab;
+  user-select:none;
+}
+
+.mark.freetext .freetext-bar:active{
+  cursor:grabbing;
+}
+
+.mark.freetext .freetext-grip{
+  flex:1 1 auto;
+  height:14px;
+  border-radius:3px;
+  background:
+    radial-gradient(circle, rgba(37,99,235,0.75) 1.2px, transparent 1.4px) 0 0 / 9px 5px,
+    linear-gradient(90deg, rgba(37,99,235,0.06), rgba(37,99,235,0.16), rgba(37,99,235,0.06));
+}
+
+.mark.freetext .freetext-delete{
+  flex:0 0 20px;
+  width:20px;
+  height:18px;
+  padding:0;
+  border:1px solid rgba(37,99,235,0.22);
+  border-radius:4px;
+  background:rgba(255,255,255,0.76);
+  color:#1e3a8a;
+  cursor:pointer;
+  font-size:12px;
+  font-weight:700;
+  line-height:16px;
+}
+
+.mark.freetext .freetext-delete:hover{
+  background:rgba(239,68,68,0.14);
+  border-color:rgba(239,68,68,0.45);
+  color:#b91c1c;
+}
+
+.mark.freetext .freetext-body{
+  flex:1 1 auto;
+  min-height:0;
+  box-sizing:border-box;
+  padding:6px 8px;
+  overflow:auto;
+  white-space:pre-wrap;
+  word-break:break-word;
+  outline:none;
+  cursor:text;
+}
+
 .mark.freetext.dragging{
   cursor: move;
   user-select: none;
@@ -243,7 +301,7 @@
 }
 
 /* Placeholder hint (empty content) */
-.mark.freetext:empty:before{
+.mark.freetext .freetext-body:empty:before{
   content: attr(data-placeholder);
   color: rgba(84,160,255,0.6);
 }
