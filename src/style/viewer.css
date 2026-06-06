@@ -15,6 +15,7 @@
 
 .toolBar {
   flex-wrap: wrap;
+  min-width: 0;
   gap: var(--gap);
   padding: 12px var(--pad);
   color: var(--text);
@@ -33,6 +34,8 @@
 .toolBar > button,
 .toolBar > .jump-bar > button,
 .toolBar > .search-bar > button {
+  min-width: 32px;
+  min-height: 32px;
   background: rgba(255,255,255,.68);
   border: 1px solid var(--stroke);
   color: var(--text);
@@ -72,8 +75,24 @@
   border-color: rgba(10,132,255,.5);
 }
 
+.toolBar > svg {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+}
+
+.toolBar > .jump-bar,
+.toolBar > .search-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
 .toolBar > .jump-bar > input {
-  width: 56px;
+  width: 64px;
+  min-width: 56px;
   text-align: center;
   margin: 0 6px;
   padding: 6px 8px;
@@ -102,8 +121,10 @@
 }
 
 .toolBar .search-bar input[type="text"],
-.toolBar .search-bar input[type="search"] {
-  min-width: 180px;
+.toolBar .search-bar input[type="search"],
+.toolBar .search-bar input:not([type]) {
+  width: clamp(120px, 18vw, 220px);
+  min-width: 0;
   padding: 8px 10px;
   color: var(--text);
   background: rgba(255,255,255,.6);
@@ -113,11 +134,13 @@
   transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
 }
 .toolBar .search-bar input[type="text"]:hover,
-.toolBar .search-bar input[type="search"]:hover {
+.toolBar .search-bar input[type="search"]:hover,
+.toolBar .search-bar input:not([type]):hover {
   background: rgba(255,255,255,.8);
 }
 .toolBar .search-bar input[type="text"]:focus,
-.toolBar .search-bar input[type="search"]:focus {
+.toolBar .search-bar input[type="search"]:focus,
+.toolBar .search-bar input:not([type]):focus {
   border-color: rgba(10,132,255,.45);
   box-shadow: 0 0 0 3px rgba(10,132,255,.15);
   background: rgba(255,255,255,.95);
@@ -137,11 +160,36 @@
 }
 
 
-.pdfViewer .page { position: relative; }
+.pdfViewer,
+.pdfViewer .page,
+.pdfViewer .canvasWrapper,
+.pdfViewer .textLayer,
+.pdfViewer .annotationLayer,
+.pdfViewer .annotationEditorLayer,
+.pdfViewer canvas {
+  box-sizing: content-box;
+}
+
+.pdfViewer .page {
+  position: relative;
+}
+
+.pdfViewer .canvasWrapper canvas {
+  image-rendering: auto;
+}
+
+#viewerContainer {
+  scrollbar-gutter: stable;
+}
+
+.pdfViewer {
+  min-width: 0;
+}
 
 .markLayer {
   position: absolute;
   inset: 0;
+  box-sizing: border-box;
   pointer-events: none;
   z-index: 6;
   isolation: isolate;
@@ -149,7 +197,7 @@
 }
 
 
-.mark { position: absolute;pointer-events:auto}
+.mark { position: absolute;box-sizing:border-box;pointer-events:auto}
 .mark.highlight { background: #FFBF00;pointer-events:auto;color: #3b6ea8;z-index: 999;}
 .mark.underline { height: 0; border-bottom: 3px solid #00c3ff; pointer-events:auto}
 .mark.strike { height: 0; border-top: 3px solid #ff0505;pointer-events:auto }
@@ -223,4 +271,26 @@
         page-break-after: always;
         page-break-inside: avoid;
     }
+}
+
+@media (max-width: 720px) {
+  .toolBar {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .toolBar > button,
+  .toolBar > .jump-bar > button,
+  .toolBar > .search-bar > button {
+    padding: 5px 8px;
+  }
+
+  .toolBar .search-bar {
+    flex: 1 1 180px;
+  }
+
+  .toolBar .search-bar label {
+    font-size: 12px;
+    white-space: nowrap;
+  }
 }

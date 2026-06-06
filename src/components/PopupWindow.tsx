@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import type React from "react";
 import "../style/popupWindow.css";
-import { EventBus } from "pdfjs-dist/web/pdf_viewer.mjs";
+import type { EventBus, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import usePdfMarks from "./Marker.tsx";
 import { useOutletContext } from "react-router-dom";
 import type { AppOutletCtx } from "../App.tsx";
@@ -13,7 +14,7 @@ type Props = {
   eventBusRef: React.MutableRefObject<EventBus | null>;
   pdfDocFingerprint: string;
   cursorMode:"select" | "pen" | "eraser";
-  viewer?:any;
+  viewer?: PDFViewer;
 };
 
 export default function PopupWindow({
@@ -39,15 +40,15 @@ export default function PopupWindow({
 
   const textRef = useRef<string>("");
 
-  const hideMenu = () => {
+  const hideMenu = useCallback(() => {
     containerRef.current!.style.visibility = "hidden";
     containerRef.current!.style.zIndex = "-1";
     setVisibility(false);
-  };
+  }, [setVisibility]);
 
   useEffect(() => {
     if (!visibility) hideMenu();
-  }, [visibility]);
+  }, [hideMenu, visibility]);
 
   /* locate the position of the menu */
   useEffect(() => {
@@ -109,9 +110,10 @@ export default function PopupWindow({
                 const h = 80 / H;
 
                 addFreeText(info.pageEl, { x, y, w, h });
-                if(pdfDocFingerprint != undefined)
+                if(pdfDocFingerprint != undefined) {
                   documentStates.current[pdfDocFingerprint] = true; //isDirty
-                  sendValueToMain && sendValueToMain("dirty");
+                  sendValueToMain?.("dirty");
+                }
               }
             }
       }, 0);
@@ -136,9 +138,10 @@ export default function PopupWindow({
             const info = getPageInfo();
             if (info) {
               addLineMark(info.pageEl, "highlight");
-              if(pdfDocFingerprint != undefined)
+              if(pdfDocFingerprint != undefined) {
                 documentStates.current[pdfDocFingerprint] = true;
-                sendValueToMain && sendValueToMain("dirty");
+                sendValueToMain?.("dirty");
+              }
             }
         }, 0);
     },

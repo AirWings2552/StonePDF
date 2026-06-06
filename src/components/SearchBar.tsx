@@ -1,11 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { EventBus } from "pdfjs-dist/web/pdf_viewer.mjs";
-import { useOutletContext } from "react-router";
+import { useOutletContext } from "react-router-dom";
 import type { AppOutletCtx } from "../App";
 
 type Props = {
   eventBus: EventBus;
   ready?: boolean;
+};
+
+type FindMatchesEvent = {
+  matchesCount?: {
+    current?: number;
+    total?: number;
+  };
+};
+
+type FindControlStateEvent = FindMatchesEvent & {
+  state: number;
 };
 
 export default function SearchBar({ eventBus, ready = true }: Props) {
@@ -22,8 +33,64 @@ export default function SearchBar({ eventBus, ready = true }: Props) {
   const [focused, setFocus] = useState(false);
 
   const sourceRef = useRef({ tag: "SearchBar" });
+  const scrollTimersRef = useRef<number[]>([]);
 
-  const dispatchFind = (
+  const updateCount = useCallback((matchesCount?: FindMatchesEvent["matchesCount"]) => {
+    const { current = 0, total = 0 } = matchesCount ?? {};
+    setCount(total ? `${current}/${total}` : "0/0");
+  }, []);
+
+  const clearScrollTimers = useCallback(() => {
+    scrollTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    scrollTimersRef.current = [];
+  }, []);
+
+  const scrollSelectedMatchIntoView = useCallback(() => {
+    const selected = document.querySelector<HTMLElement>(
+      "#viewerContainer .textLayer .highlight.selected"
+    );
+    const container = document.getElementById("viewerContainer");
+    if (!selected || !container) return false;
+
+    const selectedBox = selected.getBoundingClientRect();
+    const containerBox = container.getBoundingClientRect();
+    const isVisible =
+      selectedBox.bottom > containerBox.top &&
+      selectedBox.top < containerBox.bottom &&
+      selectedBox.right > containerBox.left &&
+      selectedBox.left < containerBox.right;
+
+    if (isVisible) return true;
+
+    const targetTop =
+      container.scrollTop +
+      selectedBox.top -
+      containerBox.top -
+      container.clientHeight * 0.42 +
+      selectedBox.height / 2;
+    const targetLeft =
+      container.scrollLeft +
+      selectedBox.left -
+      containerBox.left -
+      container.clientWidth * 0.35 +
+      selectedBox.width / 2;
+
+    container.scrollTo({
+      top: Math.max(0, targetTop),
+      left: Math.max(0, targetLeft),
+      behavior: "smooth",
+    });
+    return true;
+  }, []);
+
+  const scheduleSelectedMatchScroll = useCallback(() => {
+    clearScrollTimers();
+    scrollTimersRef.current = [0, 80, 180, 320].map((delay) =>
+      window.setTimeout(scrollSelectedMatchIntoView, delay)
+    );
+  }, [clearScrollTimers, scrollSelectedMatchIntoView]);
+
+  const dispatchFind = useCallback((
     type:
       | ""
       | "again"
@@ -44,7 +111,7 @@ export default function SearchBar({ eventBus, ready = true }: Props) {
       matchDiacritics,
       findPrevious,
     });
-  };
+  }, [caseSensitive, entireWord, eventBus, highlightAll, matchDiacritics, q, ready]);
 
 
   const onInput = (v: string) => {
@@ -69,44 +136,43 @@ export default function SearchBar({ eventBus, ready = true }: Props) {
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       dispatchFind("again", e.shiftKey);
-    } else if (e.key === "Escape") {
-
     }
   };
 
-  const onNext = () => dispatchFind("again", false);
-  const onPrev = () => dispatchFind("again", true);
+  const onNext = () => {
+    dispatchFind("again", false);
+  };
+  const onPrev = () => {
+    dispatchFind("again", true);
+  };
 
   const onToggleHA = (v: boolean) => {
     setHA(v);
-    dispatchFind("highlightallchange");
   };
   const onToggleCS = (v: boolean) => {
     setCS(v);
-    dispatchFind("casesensitivitychange");
   };
   const onToggleEW = (v: boolean) => {
     setEW(v);
-    dispatchFind("entirewordchange");
   };
   const onToggleMD = (v: boolean) => {
     setMD(v);
-    dispatchFind("diacriticmatchingchange");
   };
 
   useEffect(() => {
-    const onCount = (e: any) => {
-      const { current = 0, total = 0 } = e?.matchesCount ?? {};
-      setCount(total ? `${current}/${total}` : "0/0");
+    const onCount = (e: FindMatchesEvent) => {
+      updateCount(e?.matchesCount);
     };
 
     const FindState = { FOUND: 0, NOT_FOUND: 1, WRAPPED: 2, PENDING: 3 } as const;
 
-    const onState = (e: any) => {
+    const onState = (e: FindControlStateEvent) => {
+      updateCount(e?.matchesCount);
       switch (e.state) {
         case FindState.FOUND:
           setStatus("");
           // console.log("Found");
+          scheduleSelectedMatchScroll();
           
           break;
         case FindState.PENDING:
@@ -120,6 +186,7 @@ export default function SearchBar({ eventBus, ready = true }: Props) {
         case FindState.WRAPPED:
           // console.log("WRAPPED");
           setStatus("wrapped");
+          scheduleSelectedMatchScroll();
           break;
       }
     };
@@ -130,43 +197,46 @@ export default function SearchBar({ eventBus, ready = true }: Props) {
       eventBus.off("updatefindmatchescount", onCount);
       eventBus.off("updatefindcontrolstate", onState);
     };
-  }, [eventBus]);
+  }, [eventBus, scheduleSelectedMatchScroll, updateCount]);
+
+  useEffect(() => clearScrollTimers, [clearScrollTimers]);
 
   useEffect(() => {
     if (!q) {
       setStatus("");
       setCount("0/0");
     }
-    if(status == "notFound"){
+    if(status === "notFound"){
       setCount("0/0");
     }
   }, [q,status]);
 
 
-  // SearchHotkey.ts
-  function isEditable(el: Element | null) {
-    if (!el || !(el instanceof HTMLElement)) return false;
-    const t = el.tagName;
-    return el.isContentEditable || t === 'INPUT' || t === 'TEXTAREA';
-  }
+  useEffect(() => {
+    const isEditable = (el: Element | null) => {
+      if (!el || !(el instanceof HTMLElement)) return false;
+      const t = el.tagName;
+      return el.isContentEditable || t === 'INPUT' || t === 'TEXTAREA';
+    };
 
-  function installFindHotkey(getInput: () => HTMLInputElement | null,
-                                    showSearch?: () => void) {
-    document.addEventListener('keydown', (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'f') return;
 
       if (isEditable(document.activeElement)) return;
 
       e.preventDefault(); 
-      showSearch?.();  
-      const input = getInput();
+      const input = inputRef.current;
       if (input) {
         input.focus({ preventScroll: true });
         input.select();
       }
-    }, { capture: true });
-  }
-  useEffect(() => installFindHotkey(() => inputRef.current), []);
+    };
+
+    document.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, { capture: true });
+    };
+  }, []);
 
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }} className="search-bar" 

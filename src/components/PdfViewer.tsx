@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import PdfWorker from "pdfjs-dist/build/pdf.worker?worker";
 (pdfjsLib as any).GlobalWorkerOptions.workerPort = new PdfWorker();
@@ -18,9 +19,10 @@ import PopupWindow from "./PopupWindow";
 import BookMark from "./BookMark";
 import "./../style/viewer.css";
 import { useOutletContext, useParams } from "react-router-dom";
-import { useDocStore, type AppOutletCtx } from "../App";
+import type { AppOutletCtx } from "../App";
+import { sha256Hex, useDocStore } from "../store/useDocStore";
 import { Eraser ,MousePointer, Save, Printer ,FileOutput} from "lucide-react"
-import { PDFArray, PDFDocument, PDFName, PDFString} from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFString} from "pdf-lib";
 import fontkit from '@pdf-lib/fontkit';
 
 
@@ -28,6 +30,16 @@ import fontkit from '@pdf-lib/fontkit';
 type PDFDocumentProxy = any;
 type PDFPageProxy = any;
 type PopupWindowCoordinates = { x: number; y: number; };
+type PreviewRenderState = {
+  pageIndex: number;
+  anchorX: number;
+  anchorY: number;
+  dpr: number;
+  zoom: number;
+  focusBiasY: number;
+};
+type PreviewSize = { width: number; height: number };
+type PreviewResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
 export default function PdfViewer() {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -48,6 +60,10 @@ export default function PdfViewer() {
   // Preview Card
   const previewRef = useRef<HTMLDivElement | null>(null);
   const previewCacheRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+  const previewPinnedRef = useRef(false);
+  const previewRenderStateRef = useRef<PreviewRenderState | null>(null);
+  const previewSizeRef = useRef<PreviewSize>({ width: 900, height: 300 });
+  const previewRenderTimerRef = useRef<number | null>(null);
   const pageAnnoIndexRef = useRef<Map<number, Map<string, any>>>(new Map());
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
 
@@ -68,22 +84,64 @@ export default function PdfViewer() {
   const targetPath = useDocStore((s) => (id ? s.docs[id]?.path : undefined));
 
   
-  const { savePdfCtx, langMap,documentStates,registerSaveAction} = useOutletContext<AppOutletCtx>();
+  const { savePdfCtx, langMap,documentStates,registerSaveAction, unregisterSaveAction} = useOutletContext<AppOutletCtx>();
   const [hasRestored,setHasRestored] = useState(false);
 
   const [cursorMode,setCursorMode] = useState<"select" | "pen" | "eraser">("select");
   const currentHistoryRef = useRef<number[]>([]); 
 
   const saveButton = useRef<HTMLButtonElement | null>(null);
+
+  const handleSavePdf = useCallback(async () => {
+    if (!pdfDocRef.current) return;
+    const fontBytes = await fetch('/NotoSansSC-Regular.ttf').then(res => res.arrayBuffer());
+
+    const originalBytes = await pdfDocRef.current.getData();
+
+    const marks = JSON.parse(localStorage.getItem("marks::" + id) || "[]");
+
+    const out = await writeMarksToPdf(originalBytes, marks,fontBytes);
+    const data = out instanceof Uint8Array ? out : new Uint8Array(out);
+
+    if (window.electronAPI && targetPath) {
+      await window.electronAPI.writePdf(targetPath, data);
+      window.electronAPI?.showAlert?.({
+        type: "info",
+        title: "Success",
+        message: langMap["savedToOriginalFile"] || "已覆盖保存到原文件 ✅",
+      });
+
+      if(id != undefined)
+        documentStates.current[id] = false;
+
+      return;
+    }
+  }, [documentStates, id, langMap, targetPath]);
+
+  const handleSaveAsAnotherPdf = useCallback(async () => {
+    if (!pdfDocRef.current) return;
+    const fontBytes = await fetch('/NotoSansSC-Regular.ttf').then(res => res.arrayBuffer());
+
+    const originalBytes = await pdfDocRef.current.getData();
+
+    const marks = JSON.parse(localStorage.getItem("marks::" + id) || "[]");
+
+    const out = await writeMarksToPdf(originalBytes, marks,fontBytes);
+    const data = out instanceof Uint8Array ? out : new Uint8Array(out);
+    const blob = new Blob([Uint8Array.from(data)], { type: "application/pdf" });
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    if(id != undefined)
+        documentStates.current[id] = false;
+    a.href = url;
+    a.download = targetFile ? targetFile.name : "document.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [documentStates, id, targetFile]);
   
   useEffect(() => {
     currentPageRef.current = currentPage;
   },[currentPage])
-
-  useEffect(() => {
-    loadFile(targetFile);
-  }, [targetFile]);
-
 
   useEffect(() => {
     pdfDocRef.current = pdfDoc;    
@@ -92,7 +150,7 @@ export default function PdfViewer() {
   useEffect(() => {
     if(id && hasRestored)
       savePdfCtx(id,currentPage);
-  },[id,currentPage])
+  },[currentPage, hasRestored, id, savePdfCtx])
 
   useEffect(() => {
     const prev = localStorage.getItem(id+"ctx");
@@ -100,18 +158,28 @@ export default function PdfViewer() {
       linkServiceRef.current.page = parseInt(prev);
     }
       
-  },[hasRestored])
+  },[hasRestored, id])
 
 
-  async function loadFile(f: File | undefined) {
+  const loadFile = useCallback(async (f: File | undefined) => {
     if (!f) return;
     console.log("File loaded");
     
-    try { viewerRef.current?.setDocument(null as any); } catch {}
-    try { await pdfDocRef.current?.destroy?.(); } catch {}
+    try { viewerRef.current?.setDocument(null as any); } catch {
+      // pdf.js may throw while tearing down an already-detached document.
+    }
+    try { await pdfDocRef.current?.destroy?.(); } catch {
+      // Ignore stale document teardown failures during file switches.
+    }
 
     pageAnnoIndexRef.current.clear();
     previewCacheRef.current.clear();
+    previewPinnedRef.current = false;
+    previewRenderStateRef.current = null;
+    if (previewRenderTimerRef.current != null) {
+      window.clearTimeout(previewRenderTimerRef.current);
+      previewRenderTimerRef.current = null;
+    }
     hoverStateRef.current = null;
 
     const buf = await f.arrayBuffer();
@@ -121,12 +189,22 @@ export default function PdfViewer() {
     setDocKey(key);
     setPdfDoc(doc);
     setPagesCount(doc.numPages);
-    documentStates.current[docKey!] = false;
+    documentStates.current[key] = false;
 
-    if (key) {
-      registerSaveAction(key, handleSavePdf);
-    }
-  }
+  }, [documentStates]);
+
+  useEffect(() => {
+    loadFile(targetFile);
+  }, [loadFile, targetFile]);
+
+  useEffect(() => {
+    if (!docKey) return;
+
+    registerSaveAction(docKey, handleSavePdf);
+    return () => {
+      unregisterSaveAction(docKey);
+    };
+  }, [docKey, handleSavePdf, registerSaveAction, unregisterSaveAction]);
 
   // async function trigger_savePDF(){
   //   await handleSavePdf();
@@ -143,11 +221,136 @@ export default function PdfViewer() {
       .pdfViewer .page .annotationLayer{z-index:5;pointer-events:none;}
       .pdfViewer .page .annotationLayer [data-annotation-id]{pointer-events:auto;}
       .pdfViewer .page .textLayer{z-index:4;}
+      .pdf-link-preview {
+        min-width: 280px;
+        min-height: 160px;
+        max-width: none;
+        max-height: none;
+        overflow: hidden;
+      }
+      .pdf-link-preview.is-pinned {
+        pointer-events: auto !important;
+        outline: 2px solid rgba(37,99,235,0.62);
+        box-shadow:
+          0 0 0 4px rgba(37,99,235,0.12),
+          0 18px 44px -18px rgba(15,23,42,0.45);
+      }
+      .pdf-link-preview__bar {
+        display: none;
+        width: 100%;
+        flex: 0 0 34px;
+        height: 34px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 0 8px 0 12px;
+        box-sizing: border-box;
+        background: linear-gradient(180deg, rgba(239,246,255,0.96), rgba(219,234,254,0.92));
+        border-bottom: 1px solid rgba(37,99,235,0.34);
+        cursor: grab;
+        user-select: none;
+      }
+      .pdf-link-preview__bar:active {
+        cursor: grabbing;
+      }
+      .pdf-link-preview.is-pinned .pdf-link-preview__bar {
+        display: flex;
+      }
+      .pdf-link-preview__grip {
+        display: block;
+        flex: 1 1 auto;
+        height: 18px;
+        border-radius: 4px;
+        opacity: 0.85;
+        background:
+          radial-gradient(circle, rgba(37,99,235,0.75) 1.4px, transparent 1.6px) 0 0 / 10px 6px,
+          linear-gradient(90deg, rgba(37,99,235,0.08), rgba(37,99,235,0.18), rgba(37,99,235,0.08));
+      }
+      .pdf-link-preview__close {
+        flex: 0 0 26px;
+        width: 26px;
+        height: 26px;
+        border: 1px solid rgba(37,99,235,0.22);
+        border-radius: 5px;
+        background: rgba(255,255,255,0.76);
+        color: #1e3a8a;
+        cursor: pointer;
+        font-size: 15px;
+        line-height: 22px;
+        font-weight: 700;
+      }
+      .pdf-link-preview__close:hover {
+        background: rgba(239,68,68,0.12);
+        border-color: rgba(239,68,68,0.38);
+        color: #b91c1c;
+      }
+      .pdf-link-preview__content {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        padding: 12px;
+        width: 100%;
+        height: 100%;
+      }
+      .pdf-link-preview.is-pinned .pdf-link-preview__content {
+        height: calc(100% - 30px);
+      }
+      .pdf-link-preview__resize {
+        display: none;
+        position: absolute;
+        z-index: 4;
+        background: rgba(37,99,235,0.5);
+        opacity: 0.9;
+        transition: background 0.12s ease, opacity 0.12s ease;
+      }
+      .pdf-link-preview.is-pinned .pdf-link-preview__resize {
+        display: block;
+      }
+      .pdf-link-preview.is-pinned .pdf-link-preview__resize:hover {
+        background: rgba(29,78,216,0.9);
+        opacity: 1;
+      }
+      .pdf-link-preview__resize[data-edge="n"],
+      .pdf-link-preview__resize[data-edge="s"] {
+        left: 18px;
+        right: 18px;
+        height: 6px;
+        cursor: ns-resize;
+      }
+      .pdf-link-preview__resize[data-edge="n"] { top: 0; border-radius: 0 0 5px 5px; }
+      .pdf-link-preview__resize[data-edge="s"] { bottom: 0; border-radius: 5px 5px 0 0; }
+      .pdf-link-preview__resize[data-edge="e"],
+      .pdf-link-preview__resize[data-edge="w"] {
+        top: 18px;
+        bottom: 18px;
+        width: 6px;
+        cursor: ew-resize;
+      }
+      .pdf-link-preview__resize[data-edge="e"] { right: 0; border-radius: 5px 0 0 5px; }
+      .pdf-link-preview__resize[data-edge="w"] { left: 0; border-radius: 0 5px 5px 0; }
+      .pdf-link-preview__resize[data-edge="nw"],
+      .pdf-link-preview__resize[data-edge="ne"],
+      .pdf-link-preview__resize[data-edge="sw"],
+      .pdf-link-preview__resize[data-edge="se"] {
+        width: 18px;
+        height: 18px;
+        background: rgba(37,99,235,0.72);
+        border: 2px solid rgba(255,255,255,0.9);
+        box-sizing: border-box;
+      }
+      .pdf-link-preview__resize[data-edge="nw"] { top: 0; left: 0; border-radius: 0 0 6px 0; cursor: nwse-resize; }
+      .pdf-link-preview__resize[data-edge="se"] { right: 0; bottom: 0; border-radius: 6px 0 0 0; cursor: nwse-resize; }
+      .pdf-link-preview__resize[data-edge="ne"] { top: 0; right: 0; border-radius: 0 0 0 6px; cursor: nesw-resize; }
+      .pdf-link-preview__resize[data-edge="sw"] { left: 0; bottom: 0; border-radius: 0 6px 0 0; cursor: nesw-resize; }
     ` 
     );
 
     // —— Singleton Preview Card —— //
     const bubble = document.createElement("div");
+    bubble.className = "pdf-link-preview";
     Object.assign(
       bubble.style,
       {
@@ -199,10 +402,12 @@ export default function PdfViewer() {
     };
     eventBus.on("scalechanging", onScaleChange);
     eventBus.on("scalechanged", onScaleChange);
-    eventBus.on("pagechanging", (e: any) => {
+    const onPageChange = (e: any) => {
       setCurrentPage(e.pageNumber);
-    });
-    eventBus.on("pagesloaded",() => setHasRestored(true));
+    };
+    const onPagesLoaded = () => setHasRestored(true);
+    eventBus.on("pagechanging", onPageChange);
+    eventBus.on("pagesloaded", onPagesLoaded);
 
     // Container resize → let viewer recalculate
     const ro = new ResizeObserver(() => {
@@ -212,6 +417,7 @@ export default function PdfViewer() {
 
     // ——Container-level mousemove real-time hit + mouseleave hide —— //
     const onMouseMove = (ev: MouseEvent) => {
+      if (previewPinnedRef.current) return;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(async () => {
         const hit = hitAnnoAt(ev, container);
@@ -246,6 +452,7 @@ export default function PdfViewer() {
     };
 
     const onMouseLeave = () => {
+      if (previewPinnedRef.current) return;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       const box = previewRef.current!;
       box.style.display = "none";
@@ -265,7 +472,9 @@ export default function PdfViewer() {
         try {
           const u = new URL(a.url.includes("://") ? a.url : `https://${a.url}`);
           window.electronAPI?.openExternal(u.toString());
-        } catch {}
+        } catch {
+          // Ignore malformed external links.
+        }
         return;
       }
       
@@ -285,46 +494,79 @@ export default function PdfViewer() {
             ls.goToPage(pn);
           }
         }
-        const box = previewRef.current!;
-        box.style.display = "none";
-        hoverStateRef.current = null;
+        if (!previewPinnedRef.current) {
+          const box = previewRef.current!;
+          box.style.display = "none";
+          hoverStateRef.current = null;
+        }
       }
       // Let <a> handle the external links itself
+    };
+
+    const onContextMenu = async (ev: MouseEvent) => {
+      const hit = hitAnnoAt(ev, container);
+      if (!hit) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+
+      const idMap = await ensureAnnoIndex(hit.pageNumber);
+      const a = idMap.get(hit.id);
+      const box = previewRef.current;
+      if (!a?.dest || a?.url || !box || box.style.display === "none") return;
+
+      setShowMenu(false);
+      pinPreview();
     };
 
     container.addEventListener("mousemove", onMouseMove, false);
     container.addEventListener("mouseleave", onMouseLeave, false);
     container.addEventListener("click", onClick, false);
+    container.addEventListener("contextmenu", onContextMenu, true);
+    const pageAnnoIndex = pageAnnoIndexRef.current;
+    const previewCache = previewCacheRef.current;
 
     // 清理
     return () => {
       eventBus.off("scalechanging", onScaleChange);
       eventBus.off("scalechanged", onScaleChange);
-      eventBus.off("pagesloaded",() => setHasRestored(true));
+      eventBus.off("pagechanging", onPageChange);
+      eventBus.off("pagesloaded", onPagesLoaded);
       ro.disconnect();
 
       container.removeEventListener("mousemove", onMouseMove, false);
       container.removeEventListener("mouseleave", onMouseLeave, false);
       container.removeEventListener("click", onClick, false);
+      container.removeEventListener("contextmenu", onContextMenu, true);
 
       if (previewRef.current && previewRef.current.parentElement === container) {
         container.removeChild(previewRef.current);
       }
       previewRef.current = null;
 
-      try { viewer.cleanup(); } catch {}
+      try { viewer.cleanup(); } catch {
+        // Cleanup is best-effort because pdf.js may already have released resources.
+      }
       eventBusRef.current = null;
       linkServiceRef.current = null;
       findControllerRef.current = null;
       viewerRef.current = null;
 
-      pageAnnoIndexRef.current.clear();
-      previewCacheRef.current.clear();
+      pageAnnoIndex.clear();
+      previewCache.clear();
+      previewPinnedRef.current = false;
+      previewRenderStateRef.current = null;
+      if (previewRenderTimerRef.current != null) {
+        window.clearTimeout(previewRenderTimerRef.current);
+        previewRenderTimerRef.current = null;
+      }
       hoverStateRef.current = null;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
 
    
+  // pdf.js viewer owns these DOM listeners for the lifetime of this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -472,7 +714,11 @@ export default function PdfViewer() {
         e.deltaY;
 
 
-      dy < 0 ? zoomIn() : zoomOut();
+      if (dy < 0) {
+        zoomIn();
+      } else {
+        zoomOut();
+      }
     };
 
     el.addEventListener("wheel", onWheel as EventListener, { passive: false });
@@ -509,7 +755,7 @@ export default function PdfViewer() {
     }
     else{
       console.log("Go back");
-      let pageNum = currentHistoryRef.current.pop();
+      const pageNum = currentHistoryRef.current.pop();
       linkServiceRef.current?.goToPage(pageNum!);
     }
   }
@@ -524,6 +770,9 @@ export default function PdfViewer() {
         display: "flex",
         flexDirection: "column",
         width: "100%",
+        height: "100%",
+        minHeight: 0,
+        minWidth: 0,
         background: "linear-gradient(135deg, #dff0ff 0%, #eaf3ff 40%, #c5e2ff 100%)",
         color: "#0f2b5b",
         position: "relative",
@@ -546,7 +795,8 @@ export default function PdfViewer() {
           alignItems: "center",
           gap: 8,
           padding: 8,
-          overflow: "auto",
+          overflowX: "auto",
+          overflowY: "auto",
           flex: "0 0 auto",
           background: "rgba(255,255,255,0.55)",
           border: "1px solid rgba(255,255,255,0.6)",
@@ -557,7 +807,9 @@ export default function PdfViewer() {
           marginLeft: 12,
           marginRight: 12,
           marginTop: 0,
-          marginBottom: 0,
+          marginBottom: 6,
+          minHeight: 48,
+          maxHeight: 112,
         }}
         className="toolBar"
       >
@@ -738,6 +990,7 @@ export default function PdfViewer() {
           background: "transparent",
           flex: 1,
           minHeight: 0,
+          minWidth: 0,
           overflow: "hidden",
           paddingLeft: 12,
           paddingRight: 12,
@@ -756,7 +1009,8 @@ export default function PdfViewer() {
               backdropFilter: "blur(14px)",
               WebkitBackdropFilter: "blur(14px)",
               overflow: "hidden",
-              height:"89vh"
+              alignSelf: "stretch",
+              minHeight: 0,
             }}
           >
             <BookMark
@@ -773,6 +1027,7 @@ export default function PdfViewer() {
             flex: 1,
             minWidth: 0,
             minHeight: 0,
+            alignSelf: "stretch",
             background:
               "linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.75))",
             border: "1px solid rgba(255,255,255,0.7)",
@@ -780,7 +1035,7 @@ export default function PdfViewer() {
             boxShadow: "0 24px 60px -28px rgba(30,64,175,0.45)",
             overflow: "hidden",
             isolation: "isolate",
-            height:"89vh"
+            height: "100%",
           }}
         >
           <div
@@ -796,6 +1051,12 @@ export default function PdfViewer() {
               id="viewer"
               className="pdfViewer"
               onContextMenu={(e) => {
+                const container = viewerContainerRef.current;
+                if (container && hitAnnoAt(e.nativeEvent, container)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
                 e.preventDefault();
                 const popupWidth = 140;
                 const popupHeight = 353 * 2/3;
@@ -913,8 +1174,359 @@ export default function PdfViewer() {
     }
   }
 
+  function previewChromeHeight() {
+    return previewPinnedRef.current ? 30 : 0;
+  }
+
+  function setPreviewBoxSize(size: PreviewSize) {
+    const box = previewRef.current;
+    if (!box) return;
+    box.style.width = `${size.width + 24}px`;
+    box.style.height = `${size.height + 24 + previewChromeHeight()}px`;
+  }
+
+  function clonePreviewCanvas(src: HTMLCanvasElement) {
+    const c = document.createElement("canvas");
+    c.width = src.width;
+    c.height = src.height;
+    c.getContext("2d")!.drawImage(src, 0, 0);
+    return c;
+  }
+
+  function closePreview() {
+    if (previewRenderTimerRef.current != null) {
+      window.clearTimeout(previewRenderTimerRef.current);
+      previewRenderTimerRef.current = null;
+    }
+    previewPinnedRef.current = false;
+    previewRenderStateRef.current = null;
+    hoverStateRef.current = null;
+
+    const box = previewRef.current;
+    if (!box) return;
+    box.classList.remove("is-pinned");
+    box.style.display = "none";
+    box.style.pointerEvents = "none";
+    box.style.transform = "translateX(-50%)";
+  }
+
+  function normalizePreviewPosition() {
+    const box = previewRef.current;
+    const container = viewerContainerRef.current;
+    if (!box || !container) return;
+
+    const boxRect = box.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    box.style.left = `${container.scrollLeft + boxRect.left - containerRect.left}px`;
+    box.style.top = `${container.scrollTop + boxRect.top - containerRect.top}px`;
+    box.style.transform = "none";
+  }
+
+  function pinPreview() {
+    const box = previewRef.current;
+    if (!box) return;
+
+    normalizePreviewPosition();
+    previewPinnedRef.current = true;
+    box.classList.add("is-pinned");
+    box.style.pointerEvents = "auto";
+    setPreviewBoxSize(previewSizeRef.current);
+  }
+
+  function schedulePreviewRerender(delay = 120) {
+    if (previewRenderTimerRef.current != null) {
+      window.clearTimeout(previewRenderTimerRef.current);
+    }
+    previewRenderTimerRef.current = window.setTimeout(() => {
+      previewRenderTimerRef.current = null;
+      void renderPreviewFromState();
+    }, delay);
+  }
+
+  function mountPreviewShell(srcCanvas?: HTMLCanvasElement, message?: string) {
+    const box = previewRef.current;
+    if (!box) return;
+
+    const size = previewSizeRef.current;
+    box.innerHTML = "";
+
+    const bar = document.createElement("div");
+    bar.className = "pdf-link-preview__bar";
+    bar.addEventListener("pointerdown", startPreviewDrag);
+
+    const grip = document.createElement("span");
+    grip.className = "pdf-link-preview__grip";
+    grip.setAttribute("aria-hidden", "true");
+    bar.appendChild(grip);
+
+    const close = document.createElement("button");
+    close.className = "pdf-link-preview__close";
+    close.type = "button";
+    close.setAttribute("aria-label", "Close preview");
+    close.textContent = "X";
+    close.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    close.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      closePreview();
+    });
+    bar.appendChild(close);
+
+    const content = document.createElement("div");
+    content.className = "pdf-link-preview__content";
+    if (message) {
+      content.style.color = "#64748b";
+      content.style.fontSize = "13px";
+      content.textContent = message;
+    } else if (srcCanvas) {
+      const node = clonePreviewCanvas(srcCanvas);
+      node.style.display = "block";
+      node.style.width = `${size.width}px`;
+      node.style.height = `${size.height}px`;
+      content.appendChild(node);
+    }
+
+    box.appendChild(bar);
+    box.appendChild(content);
+
+    (["n", "s", "e", "w", "nw", "ne", "sw", "se"] as PreviewResizeEdge[]).forEach((edge) => {
+      const handle = document.createElement("div");
+      handle.className = "pdf-link-preview__resize";
+      handle.dataset.edge = edge;
+      handle.addEventListener("pointerdown", (ev) => startPreviewResize(ev, edge));
+      box.appendChild(handle);
+    });
+  }
+
+  function startPreviewDrag(ev: PointerEvent) {
+    if (!previewPinnedRef.current || ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    normalizePreviewPosition();
+
+    const box = previewRef.current;
+    if (!box) return;
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const startLeft = parseFloat(box.style.left || "0");
+    const startTop = parseFloat(box.style.top || "0");
+
+    const onMove = (moveEv: PointerEvent) => {
+      box.style.left = `${startLeft + moveEv.clientX - startX}px`;
+      box.style.top = `${startTop + moveEv.clientY - startY}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove, true);
+      document.removeEventListener("pointerup", onUp, true);
+    };
+
+    document.addEventListener("pointermove", onMove, true);
+    document.addEventListener("pointerup", onUp, true);
+  }
+
+  function startPreviewResize(ev: PointerEvent, edge: PreviewResizeEdge) {
+    if (!previewPinnedRef.current || ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    normalizePreviewPosition();
+
+    const box = previewRef.current;
+    if (!box) return;
+
+    const minContentW = 240;
+    const minContentH = 100;
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const startLeft = parseFloat(box.style.left || "0");
+    const startTop = parseFloat(box.style.top || "0");
+    const startOuterW = box.offsetWidth;
+    const startOuterH = box.offsetHeight;
+
+    const applySize = (moveEv: PointerEvent) => {
+      const dx = moveEv.clientX - startX;
+      const dy = moveEv.clientY - startY;
+      let left = startLeft;
+      let top = startTop;
+      let outerW = startOuterW;
+      let outerH = startOuterH;
+
+      if (edge.includes("e")) outerW = startOuterW + dx;
+      if (edge.includes("s")) outerH = startOuterH + dy;
+      if (edge.includes("w")) {
+        outerW = startOuterW - dx;
+        left = startLeft + dx;
+      }
+      if (edge.includes("n")) {
+        outerH = startOuterH - dy;
+        top = startTop + dy;
+      }
+
+      const minOuterW = minContentW + 24;
+      const minOuterH = minContentH + 24 + previewChromeHeight();
+      if (outerW < minOuterW) {
+        if (edge.includes("w")) left -= minOuterW - outerW;
+        outerW = minOuterW;
+      }
+      if (outerH < minOuterH) {
+        if (edge.includes("n")) top -= minOuterH - outerH;
+        outerH = minOuterH;
+      }
+
+      box.style.left = `${left}px`;
+      box.style.top = `${top}px`;
+      previewSizeRef.current = {
+        width: Math.round(outerW - 24),
+        height: Math.round(outerH - 24 - previewChromeHeight()),
+      };
+      setPreviewBoxSize(previewSizeRef.current);
+      schedulePreviewRerender();
+    };
+
+    const onUp = () => {
+      document.removeEventListener("pointermove", applySize, true);
+      document.removeEventListener("pointerup", onUp, true);
+      void renderPreviewFromState();
+    };
+
+    document.addEventListener("pointermove", applySize, true);
+    document.addEventListener("pointerup", onUp, true);
+  }
+
+  async function renderPreviewFromState() {
+    const doc = pdfDocRef.current as any;
+    const box = previewRef.current;
+    const state = previewRenderStateRef.current;
+    if (!doc || !box || !state) return;
+
+    const size = previewSizeRef.current;
+    const key = `${doc.fingerprint}-p${state.pageIndex + 1}-w${size.width}-h${size.height}-dpr${state.dpr}-z${state.zoom}-by${state.focusBiasY}`;
+    const cached = previewCacheRef.current.get(key);
+    if (cached) {
+      mountPreviewShell(cached);
+      return;
+    }
+
+    mountPreviewShell(undefined, "Generating preview...");
+
+    const page: PDFPageProxy = await doc.getPage(state.pageIndex + 1);
+    const vp = page.getViewport({ scale: state.dpr * state.zoom });
+    const off = document.createElement("canvas");
+    off.width = Math.ceil(vp.width);
+    off.height = Math.ceil(vp.height);
+
+    const offCtx = off.getContext("2d")!;
+    offCtx.fillStyle = "white";
+    offCtx.fillRect(0, 0, off.width, off.height);
+    await page.render({ canvasContext: offCtx, viewport: vp }).promise;
+
+    const t = vp.transform;
+    const py = t[1] * state.anchorX + t[3] * state.anchorY + t[5];
+    const winPXW = Math.max(1, Math.round(size.width * state.dpr));
+    const winPXH = Math.max(1, Math.round(size.height * state.dpr));
+    const srcW = off.width;
+    const srcH = Math.min(off.height, Math.round(srcW * (winPXH / winPXW)));
+    const sx = 0;
+    let sy = Math.round(py - srcH * (0.5 + state.focusBiasY));
+    sy = Math.max(0, Math.min(sy, off.height - srcH));
+
+    const canv = document.createElement("canvas");
+    canv.width = winPXW;
+    canv.height = winPXH;
+    canv.style.width = `${size.width}px`;
+    canv.style.height = `${size.height}px`;
+
+    const ctx = canv.getContext("2d")!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, winPXW, winPXH);
+    ctx.drawImage(off, sx, sy, srcW, srcH, 0, 0, winPXW, winPXH);
+
+    previewCacheRef.current.set(key, canv);
+    mountPreviewShell(canv);
+  }
+
+  async function showResizablePreview(ev: MouseEvent, anno: any) {
+    if (!enablePreview.current || previewPinnedRef.current) return;
+    const doc = pdfDocRef.current as any;
+    const container = viewerContainerRef.current as HTMLElement;
+    const box = previewRef.current as HTMLDivElement;
+    if (!doc || !container || !box) return;
+    if (!anno?.dest || anno?.url) return;
+
+    const resolveDest = async (d: any) => {
+      if (Array.isArray(d)) return d;
+      if (typeof d === "string") {
+        const explicit = await doc.getDestination(d);
+        return Array.isArray(explicit) ? explicit : null;
+      }
+      return null;
+    };
+
+    try {
+      const destArray = await resolveDest(anno.dest);
+      if (!destArray) return;
+
+      const ref = destArray[0];
+      const pageIndex = await doc.getPageIndex(ref);
+      const page: PDFPageProxy = await doc.getPage(pageIndex + 1);
+      const mode = (destArray[1]?.name || destArray[1]) as any;
+      let anchorX = 0;
+      let anchorY = 0;
+      if (mode === "XYZ" && typeof destArray[2] === "number" && typeof destArray[3] === "number") {
+        anchorX = destArray[2];
+        anchorY = destArray[3];
+      } else {
+        anchorX = (page.view[2] - page.view[0]) / 2;
+        anchorY = (page.view[3] - page.view[1]) / 2;
+      }
+
+      previewPinnedRef.current = false;
+      previewRenderStateRef.current = {
+        pageIndex,
+        anchorX,
+        anchorY,
+        dpr: Math.max(1, window.devicePixelRatio || 1),
+        zoom: 1.5,
+        focusBiasY: -0.12,
+      };
+      previewSizeRef.current = { width: 900, height: 300 };
+
+      const { scrollLeft, scrollTop, clientWidth, clientHeight } = container;
+      const crect = container.getBoundingClientRect();
+      box.classList.remove("is-pinned");
+      box.style.display = "flex";
+      box.style.pointerEvents = "none";
+      box.style.left = `${scrollLeft + clientWidth / 2}px`;
+      box.style.transform = "translateX(-50%)";
+      box.style.padding = "0";
+      box.style.boxSizing = "border-box";
+      box.style.flexDirection = "column";
+      box.style.alignItems = "stretch";
+      box.style.justifyContent = "flex-start";
+      box.style.zIndex = "9999";
+      setPreviewBoxSize(previewSizeRef.current);
+
+      const desiredTop = scrollTop + (ev.clientY - crect.top) + 12;
+      const boxH = previewSizeRef.current.height + 24;
+      const margin = 8;
+      const topMin = scrollTop + margin;
+      const topMax = scrollTop + clientHeight - boxH - margin;
+      box.style.top = `${Math.min(Math.max(desiredTop, topMin), Math.max(topMin, topMax))}px`;
+
+      await renderPreviewFromState();
+    } catch (err) {
+      console.warn("Preview failed", err);
+      mountPreviewShell(undefined, "Preview failed");
+    }
+  }
+
   async function showPreview(ev: MouseEvent, anno: any) {
     if (!enablePreview.current) return;
+    const useResizablePreview = true;
+    if (useResizablePreview) {
+      await showResizablePreview(ev, anno);
+      return;
+    }
     const doc = pdfDocRef.current as any;
     const container = viewerContainerRef.current as HTMLElement;
     const box = previewRef.current as HTMLDivElement;
@@ -1063,64 +1675,6 @@ export default function PdfViewer() {
     document.head.appendChild(s);
   }
 
-  async function handleSavePdf() {
-    if (!pdfDocRef.current) return;
-    const fontBytes = await fetch('/NotoSansSC-Regular.ttf').then(res => res.arrayBuffer());
-    
-    const originalBytes = await pdfDocRef.current.getData();
-
-    const marks = JSON.parse(localStorage.getItem("marks::" + id) || "[]");
-    console.log("marks",id);
-    
-    const out = await writeMarksToPdf(originalBytes, marks,fontBytes);
-    const data = out instanceof Uint8Array ? out : new Uint8Array(out);
-    console.log(targetPath);
-    
-    if (window.electronAPI && targetPath) {
-      await window.electronAPI.writePdf(targetPath, data);
-      window.electronAPI?.showAlert?.({
-        type: "info",
-        title: "Success",
-        message: langMap["savedToOriginalFile"] || "已覆盖保存到原文件 ✅",
-      });
-
-      if(id != undefined)
-        documentStates.current[id] = false;
-      
-      return;
-    }
-  }
-
-  async function handleSaveAsAnotherPdf() {
-    if (!pdfDocRef.current) return;
-    const fontBytes = await fetch('/NotoSansSC-Regular.ttf').then(res => res.arrayBuffer());
-
-    const originalBytes = await pdfDocRef.current.getData();
-
-    const marks = JSON.parse(localStorage.getItem("marks::" + id) || "[]");
-
-    const out = await writeMarksToPdf(originalBytes, marks,fontBytes);
-    const data = out instanceof Uint8Array ? out : new Uint8Array(out);
-    // Ensure we pass a proper ArrayBufferView to Blob (avoid SharedArrayBuffer typing issues)
-    const blob = new Blob([Uint8Array.from(data)], { type: "application/pdf" });
-    const a = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    if(id != undefined)
-        documentStates.current[id] = false;
-    a.href = url;
-    a.download = targetFile ? targetFile.name : "document.pdf";
-    a.click();
-    // Cleanup the created object URL
-    URL.revokeObjectURL(url);
-  }
-
-}
-
-export async function sha256Hex(buffer: ArrayBuffer) {
-    const hash = await crypto.subtle.digest("SHA-256", buffer);
-    return [...new Uint8Array(hash)]
-      .map(b => b.toString(16).padStart(2, "0"))
-      .join("");
 }
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -1158,6 +1712,16 @@ function toRGB(color?: string, fallback: [number,number,number] = [0,0,0]): [num
   return parseRGB(color) ?? fallback;
 }
 
+function removeExistingExportedAnnots(annots: PDFArray, markIds: Set<string>) {
+  for (let i = annots.size() - 1; i >= 0; i--) {
+    const annot = annots.lookupMaybe(i, PDFDict);
+    const nm = annot?.lookupMaybe(PDFName.of("NM"), PDFString, PDFHexString);
+    if (nm && markIds.has(nm.decodeText())) {
+      annots.remove(i);
+    }
+  }
+}
+
 
 async function writeMarksToPdf(
   original: ArrayBuffer, 
@@ -1170,6 +1734,13 @@ async function writeMarksToPdf(
   pdfDoc.registerFontkit(fontkit);
 
   const pages = pdfDoc.getPages();
+  const markIdsByPage = new Map<number, Set<string>>();
+  for (const mark of marks) {
+    const ids = markIdsByPage.get(mark.page) ?? new Set<string>();
+    ids.add(mark.id);
+    markIdsByPage.set(mark.page, ids);
+  }
+  const cleanedPages = new Set<number>();
 
   // 2. 嵌入中文字体 (Subset 模式)
   const customFont = await pdfDoc.embedFont(chineseFontBuffer, { subset: false });
@@ -1189,14 +1760,20 @@ async function writeMarksToPdf(
       page.node.set(PDFName.of("Annots"), annots);
     }
 
+    if (!cleanedPages.has(m.page)) {
+      removeExistingExportedAnnots(annots, markIdsByPage.get(m.page) ?? new Set());
+      cleanedPages.add(m.page);
+    }
+
     // --- Note (Sticky Note) ---
     if (m.type === "note") {
       const x = m.anchor.x * W, y = (1 - m.anchor.y) * H;
       const ref = pdfDoc.context.register(pdfDoc.context.obj({
         Type: PDFName.of("Annot"),
         Subtype: PDFName.of("Text"),
+        NM: PDFHexString.fromText(m.id),
         Rect: [x, y, x + 20, y + 20],
-        Contents: PDFString.of(m.text || ""), // Contents 属性 pdf-lib 会自动处理编码
+        Contents: PDFHexString.fromText(m.text || ""),
       }));
       (annots as any).push(ref);
       continue;
@@ -1224,6 +1801,7 @@ async function writeMarksToPdf(
       const ref = pdfDoc.context.register(pdfDoc.context.obj({
         Type: PDFName.of("Annot"),
         Subtype: PDFName.of(subtype),
+        NM: PDFHexString.fromText(m.id),
         Rect: [xMin, yMin, xMax, yMax],
         QuadPoints: quads,
         C,
@@ -1239,7 +1817,7 @@ async function writeMarksToPdf(
       const left   = x * W;
       const right  = (x + w) * W;
       const top    = (1 - y) * H;
-      const bottom = (1 - y - h) * H;
+      let bottom = (1 - y - h) * H;
 
       const fs = fontSize ?? 12;
       const textRGB = toRGB(textColor, [0, 0, 0]);
@@ -1250,12 +1828,11 @@ async function writeMarksToPdf(
       const DA = PDFString.of(`/F1 ${fs} Tf ${textRGB[0]} ${textRGB[1]} ${textRGB[2]} rg`);
 
       const padX = 6, padY = 6;
-      const boxW = right - left;
-      const boxH = top - bottom;
+      const boxW = Math.max(1, right - left);
       const leading = +(fs * 1.2).toFixed(2);
 
       // --- Automatic line wrapping calculation ---
-      const maxWidth = boxW - padX * 2;
+      const maxWidth = Math.max(1, boxW - padX * 2);
       const originalLines = String(text || "").split(/\r?\n/);
       const wrappedLines: string[] = [];
 
@@ -1277,8 +1854,16 @@ async function writeMarksToPdf(
         wrappedLines.push(current);
       }
 
-      // Limit the maximum number of rows to prevent overflow
-      const usableH = boxH - padY * 2;
+      const requestedBoxH = Math.max(1, top - bottom);
+      const requiredBoxH = Math.max(
+        requestedBoxH,
+        padY * 2 + fs + Math.max(0, wrappedLines.length - 1) * leading,
+      );
+      bottom = Math.max(0, top - requiredBoxH);
+      const boxH = top - bottom;
+
+      // Limit only when the page boundary prevents further growth.
+      const usableH = Math.max(1, boxH - padY * 2);
       const maxLines = Math.max(1, Math.floor((usableH - fs) / leading) + 1);
       const lines = wrappedLines.slice(0, maxLines);
 
@@ -1328,8 +1913,9 @@ async function writeMarksToPdf(
       const annot = pdfDoc.context.obj({
         Type: PDFName.of("Annot"),
         Subtype: PDFName.of("FreeText"),
+        NM: PDFHexString.fromText(m.id),
         Rect: [left, bottom, right, top],
-        Contents: PDFString.of(String(text || "")),
+        Contents: PDFHexString.fromText(String(text || "")),
         DA,
         Q: 0,
         BG: [bgRGB[0], bgRGB[1], bgRGB[2]],

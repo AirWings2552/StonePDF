@@ -5,12 +5,18 @@ import type { AppOutletCtx } from "../App";
 
 type OutlineItem = {
   title: string;
-  dest?: string | any[];
+  dest?: string | unknown[];
   url?: string;
   items?: OutlineItem[];
   bold?: boolean;
   italic?: boolean;
   color?: number[];
+};
+
+type PdfDocumentLike = {
+  getOutline: () => Promise<OutlineItem[] | null>;
+  getDestination: (dest: string) => Promise<unknown[] | null>;
+  getPageIndex: (ref: unknown) => Promise<number>;
 };
 
 const MIN_W = 100;
@@ -20,8 +26,8 @@ export default function BookMark({
   pdfDoc,
   onGoToDest,
 }: {
-  pdfDoc: any | null;
-  onGoToDest?: (dest: any) => void;
+  pdfDoc: PdfDocumentLike | null;
+  onGoToDest?: (dest: string | unknown[]) => void;
 }) {
   const [width, setWidth] = useState<number>(() => {
     const v = localStorage.getItem("bookmarkWidth");
@@ -52,7 +58,7 @@ export default function BookMark({
           setOutline(ol || []);
           // Expand one level by default
           const s = new Set<string>();
-          (ol || []).forEach((_: any, i: number) => s.add(`0/${i}`));
+          (ol || []).forEach((_, i: number) => s.add(`0/${i}`));
           setExpanded(s);
         }
       } catch (e) {
@@ -72,7 +78,11 @@ export default function BookMark({
   const toggle = (id: string) =>
     setExpanded(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
 
@@ -255,11 +265,13 @@ export default function BookMark({
           localStorage.setItem("bookmarkAutoFit", "0");
           const startX = e.clientX;
           const startW = width;
+          let nextWidth = width;
           document.body.style.userSelect = "none";
           document.body.style.cursor = "col-resize";
           const onMove = (ev: MouseEvent) => {
             if (!isDraggingRef.current) return;
             const next = Math.max(MIN_W, Math.min(MAX_W, startW + (ev.clientX - startX)));
+            nextWidth = next;
             setWidth(next);
           };
           const onUp = () => {
@@ -268,7 +280,7 @@ export default function BookMark({
             document.body.style.cursor = "";
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
-            localStorage.setItem("bookmarkWidth", String(width));
+            localStorage.setItem("bookmarkWidth", String(nextWidth));
           };
           window.addEventListener("mousemove", onMove);
           window.addEventListener("mouseup", onUp, { once: true });

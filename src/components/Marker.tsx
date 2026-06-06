@@ -8,7 +8,7 @@ import { useCallback, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { v4 as uuid } from "uuid";
 import type { AppOutletCtx } from "../App";
-import type { PDFViewer } from "pdfjs-dist/web/pdf_viewer.d.mts";
+import type { EventBus, PDFViewer } from "pdfjs-dist/web/pdf_viewer.d.mts";
 
 /* ---------- Type ---------- */
 
@@ -71,40 +71,38 @@ function getPageNumber(el: HTMLElement) {
   return Number(el.getAttribute("data-page-number"));
 }
 
+function measureFreeTextBox(node: HTMLElement, layer: HTMLElement) {
+  const left = parseFloat(node.style.left) || 0;
+  const top = parseFloat(node.style.top) || 0;
+  const width = Math.max(24, node.offsetWidth, node.scrollWidth);
+  const height = Math.max(20, node.offsetHeight, node.scrollHeight);
+  return {
+    x: left / layer.clientWidth,
+    y: top / layer.clientHeight,
+    w: width / layer.clientWidth,
+    h: height / layer.clientHeight,
+  };
+}
+
+function growFreeTextHeight(node: HTMLElement) {
+  node.style.height = `${Math.max(20, node.offsetHeight, node.scrollHeight)}px`;
+}
 
 
 
-export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; mode:"select" | "pen" | "eraser" ;viewer:PDFViewer}) {
-    const { eventBus, fingerprint ,mode,viewer} = opts;
+
+export default function usePdfMarks(opts: { eventBus: EventBus; fingerprint: string; mode:"select" | "pen" | "eraser" ;viewer:PDFViewer}) {
+    const { eventBus, fingerprint ,mode} = opts;
     const {langMap} = useOutletContext<AppOutletCtx>();
-    useEffect(() => {
-      if (mode !== "eraser") return;
-      const handleClick = (e: MouseEvent) => {
-        if(e.buttons !== 1) return; 
-        const el = e.target as HTMLElement;
-        if (el.classList.contains("mark")) {
-          erase(el.id,fingerprint);
-        }
-      };
 
-      document.addEventListener("mousemove", handleClick);
-
-      return () => {
-        document.removeEventListener("mousemove", handleClick);
-      };
-    }, [mode]);
-    
-
-    function renderMarksOnPage(pageEl: HTMLElement, marks: Mark[]) {
+    const renderMarksOnPage = useCallback((pageEl: HTMLElement, marks: Mark[]) => {
       const pageNo = getPageNumber(pageEl);
       const layer = ensureMarkLayer(pageEl);
       layer.innerHTML = "";
 
-      const pageIndex = getPageNumber(pageEl) - 1;
-      const pageView = viewer!.getPageView(pageIndex);
-      const vp = pageView.viewport;           
-      const W = vp.width;                     
-      const H = vp.height;
+      const layerBox = layer.getBoundingClientRect();
+      const W = layerBox.width || layer.clientWidth;
+      const H = layerBox.height || layer.clientHeight;
 
       for (const m of marks) {
         if (m.page !== pageNo) continue;
@@ -198,7 +196,7 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
             startLeft = parseFloat(n.style.left) || 0;
             startTop  = parseFloat(n.style.top)  || 0;
 
-            (n as any).setPointerCapture?.(ev.pointerId);
+            n.setPointerCapture?.(ev.pointerId);
             ev.preventDefault();
             ev.stopPropagation();
           });
@@ -221,14 +219,9 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
             dragging = false;
             n.classList.remove("dragging");
 
-            // Save relative coordinates (independent of scaling)
-            const left = parseFloat(n.style.left) || 0;
-            const top  = parseFloat(n.style.top)  || 0;
-            const wpx  = n.offsetWidth, hpx = n.offsetHeight;
-
             const all = loadMarks(fingerprint).map(mm =>
               mm.id === m.id && mm.type === "freetext"
-                ? { ...mm, box: { x: left / layer.clientWidth, y: top / layer.clientHeight, w: wpx / layer.clientWidth, h: hpx / layer.clientHeight } }
+                ? { ...mm, box: measureFreeTextBox(n, layer) }
                 : mm
             );
             saveMarks(fingerprint, all);
@@ -240,27 +233,19 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
           // Text editing: Lose focus or press Enter to save
       // Text editing: Lose focus or press Enter to save
           const persistText = () => {
-            // --- ADD THIS LOGIC (copied from onPointerUp) ---
-            // Get current position and dimensions in pixels
-            const left = parseFloat(n.style.left) || 0;
-            const top = parseFloat(n.style.top) || 0;
-            const wpx = n.offsetWidth, hpx = n.offsetHeight;
-            // -------------------------------------------------
+            growFreeTextHeight(n);
             const all = loadMarks(fingerprint).map(mm => mm.id === m.id && mm.type==="freetext"
              ? { 
                   ...mm, 
-                  text: n.innerText, // 1. Save the updated text
-                  // 2. Save the updated box dimensions (as relative coordinates)
-                  box: { 
-                    x: left / layer.clientWidth, 
-                    y: top / layer.clientHeight, 
-                    w: wpx / layer.clientWidth, 
-                    h: hpx / layer.clientHeight 
-                  }
+                  text: n.innerText,
+                  box: measureFreeTextBox(n, layer)
                 }
              : mm);
             saveMarks(fingerprint, all);
           };
+          n.addEventListener("input", () => {
+            growFreeTextHeight(n);
+          });
           n.addEventListener("blur", persistText);
           n.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) n.blur();
@@ -269,15 +254,40 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
           layer.appendChild(n);
           continue;
         }
-
       }
-    }
+    }, [fingerprint, langMap]);
 
-    function rerenderAll(marks: Mark[]) {
+    const rerenderAll = useCallback((marks: Mark[]) => {
       document
         .querySelectorAll<HTMLElement>(".pdfViewer .page")
         .forEach((p) => renderMarksOnPage(p, marks));
-    }
+    }, [renderMarksOnPage]);
+
+    const erase = useCallback((id:string,docId:string) => {
+      const raw = loadMarks(docId);
+      if (!raw) return;
+
+      const filtered = raw.filter(m => m.id !== id);
+      saveMarks(docId, filtered);
+      rerenderAll(filtered);
+    }, [rerenderAll]);
+
+    useEffect(() => {
+      if (mode !== "eraser") return;
+      const handleClick = (e: MouseEvent) => {
+        if(e.buttons !== 1) return;
+        const el = e.target as HTMLElement;
+        if (el.classList.contains("mark")) {
+          erase(el.id,fingerprint);
+        }
+      };
+
+      document.addEventListener("mousemove", handleClick);
+
+      return () => {
+        document.removeEventListener("mousemove", handleClick);
+      };
+    }, [erase, fingerprint, mode]);
 
   /* Register pdf.js events: zoom / page turn / redraw after page rendering is completed */
   useEffect(() => {
@@ -297,7 +307,7 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
       eventBus.off("scalechanged", rerender);
       eventBus.off("pagechanging", rerender);
     };
-  }, [eventBus,fingerprint]);
+  }, [eventBus,fingerprint, rerenderAll]);
 
   /* -------- API：Four methods of external exposure -------- */
 
@@ -307,12 +317,18 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
     if (!sel || sel.rangeCount === 0) return [];
     const range = sel.getRangeAt(0);
     const rectList = Array.from(range.getClientRects());
-    const box = pageEl.getBoundingClientRect();
+    const layer = ensureMarkLayer(pageEl);
+    const box = layer.getBoundingClientRect();
 
     return rectList
-      .filter(
-        (r) => r.width > 0 && r.height > 0 && r.bottom > box.top && r.top < box.bottom,
-      )
+      .map((r) => {
+        const left = Math.max(r.left, box.left);
+        const top = Math.max(r.top, box.top);
+        const right = Math.min(r.right, box.right);
+        const bottom = Math.min(r.bottom, box.bottom);
+        return { left, top, right, bottom, width: right - left, height: bottom - top };
+      })
+      .filter((r) => r.width > 0 && r.height > 0 && box.width > 0 && box.height > 0)
       .map((r) => ({
         x: (r.left - box.left) / box.width,
         y: (r.top - box.top) / box.height,
@@ -344,7 +360,7 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
       saveMarks(fingerprint,all);
       renderMarksOnPage(pageEl, all);
     },
-    [rectsFromSelection,fingerprint],
+    [fingerprint, rectsFromSelection, renderMarksOnPage],
   );
 
   const addNote = useCallback((pageEl: HTMLElement, point: Point, text: string) => {
@@ -359,18 +375,18 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
     all.push(m);
     saveMarks(fingerprint,all);
     renderMarksOnPage(pageEl, all);
-  }, [fingerprint]);
+  }, [fingerprint, renderMarksOnPage]);
 
   const removeMark = useCallback((id: string) => {
     const all = loadMarks(fingerprint).filter((m) => m.id !== id);
     saveMarks(fingerprint,all);
     rerenderAll(all);
-  }, [fingerprint]);
+  }, [fingerprint, rerenderAll]);
 
   const clearAllMarks = useCallback(() => {
     saveMarks(fingerprint,[]);
     rerenderAll([]);
-  }, [fingerprint]);
+  }, [fingerprint, rerenderAll]);
 
   const addFreeText = useCallback((pageEl: HTMLElement, box: Rect, text = "", opts?: {
     fontSize?: number; textColor?: string; bgColor?: string; border?: boolean
@@ -388,20 +404,8 @@ export default function usePdfMarks(opts: { eventBus: any; fingerprint: string; 
     all.push(m);
     saveMarks(fingerprint, all);
     renderMarksOnPage(pageEl, all);
-  }, [fingerprint]);
+  }, [fingerprint, renderMarksOnPage]);
     
-    const erase = (id:string,docId:string) => {
-    const raw = loadMarks(docId);
-    
-    if (!raw) return;
-    
-    const filtered = raw.filter(m => m.id !== id);
-    saveMarks(docId, filtered);
-    rerenderAll(filtered);
-    
-  }
-  
-
   return { addLineMark, addNote, removeMark ,clearAllMarks,addFreeText};
 }
 

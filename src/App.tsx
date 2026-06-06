@@ -1,13 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Outlet, Link, useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import type { TabItem } from "./components/TabBar";
 import TabBar from "./components/TabBar";
-import { sha256Hex } from "./components/PdfViewer";
-import { create } from "zustand";
 import { LanguagesIcon } from "lucide-react"
 import lang_zh from "./assets/localization/chinese.json"
 import lang_en from "./assets/localization/english.json"
 import lang_du from "./assets/localization/dutch.json"
+import { useDocStore } from "./store/useDocStore";
 
 
 
@@ -42,11 +41,11 @@ declare global {
       notifyReady?(): void;
       printPdfFile?(filePath: string): Promise<void>;
       showAlert(options: {type: 'none' | 'info' | 'error' | 'question' | 'warning', title: string, message: string}): void;
-      openImg(): Promise<any>;
+      openImg(): Promise<Array<{ data: Uint8Array; type: "png" | "jpg" | "jpeg" }>>;
       getPathAfterDownload(url: string): Promise<string>;
       openExternal: (url: string) => void;
-      askUser:() => number;
-      onAppCloseCheck?: (cb: () => void) => void; // 新增
+      askUser:() => number | Promise<number>;
+      onAppCloseCheck?: (cb: () => void) => void | (() => void); // 新增
       confirmClose?: () => void; // 新增
     };
 
@@ -78,19 +77,21 @@ declare global {
 
 const MAX_RECENTS = 20;
 
+type RecentFile = { name: string; sizeKB: number; date: string; path?: string; docId: string };
+
 
 
 export type AppOutletCtx = {
-  onOpenTab: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onOpenTab: () => Promise<void>;
   savePdfCtx: (docId: string, pdfPageNum: number) => void;
   openWithElectron: () => Promise<void>;
-  recents: { name: string; sizeKB: number; date: string; path?: string ;docId:string}[];
+  recents: RecentFile[];
   openFromPath: (filePath: string) => Promise<void>;
   langMap: Record<string, string>;
   deleteContext:(docId:string,path:string)=>void;
   documentStates: React.RefObject<Record<string, boolean>>;
   registerSaveAction:(id: string, action: () => Promise<void>) => void;
-  unregisterSaveAction:() => void;
+  unregisterSaveAction:(id: string) => void;
   sendValueToMain?: (value: string) => number;
 };
 
@@ -100,14 +101,12 @@ const electronPathMap = new Map<string, string>();
 export default function App() {
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [recents, setRecents] = useState<{ name: string; sizeKB: number; date: string; path?: string ,docId:string}[]>(
-    []
-  );
+  const [recents, setRecents] = useState<RecentFile[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
   const restored = useRef(false);
   const [showLangMenu,setLangMenu] = useState(false);
   const [language,setLang] = useState("zh");
-  const langRef = useRef("zh");
   const [langMap,setLangMap] = useState(lang_zh);
   const recentsLoaded = useRef(false);
   const documentStates = useRef<Record<string, boolean>>({});
@@ -125,18 +124,18 @@ export default function App() {
     delete saveActions.current[id];
   }, []);
 
-  const savePdfCtx = (docId: string, pdfpageNumber: number) => {
+  const savePdfCtx = useCallback((docId: string, pdfpageNumber: number) => {
     localStorage.setItem(docId + "ctx", pdfpageNumber.toString());
-  };
+  }, []);
 
 
   // This function is called when the local file is removed manually.
   // It will remove the corresponding context stored in localStorage.
   // This function is passed down to PdfViewer via Outlet context.
-  const deleteContext = (docId:string, path:string) => {
+  const deleteContext = useCallback((docId:string, path:string) => {
     localStorage.removeItem(docId + "ctx"); // remove page number record in localStorage
     setRecents((r) => r.filter((item) => item.path !== path)); // remove from recents list
-  }
+  }, []);
 
   const tabsRef = useRef<TabItem[]>([]);
   useEffect(() => {
@@ -147,7 +146,7 @@ export default function App() {
     if (!window.electronAPI?.onAppCloseCheck) return;
 
     // 监听主进程的“检查关闭”信号
-    const _removeListener = window.electronAPI.onAppCloseCheck(async () => {
+    const removeListener = window.electronAPI.onAppCloseCheck(async () => {
       const currentTabs = tabsRef.current;
       for (const tab of currentTabs) {
         if (documentStates.current[tab.id]) {
@@ -191,7 +190,91 @@ export default function App() {
       }
       window.electronAPI!.confirmClose?.();
     });
+    return () => {
+      if (typeof removeListener === "function") {
+        removeListener();
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    if (activeId) navigate(`/viewer/${activeId}`);
+    else navigate(`/`); // back to MainScreen
+  }, [activeId, navigate]);
+
+  const findTabIdByPath = useCallback((p: string): string | null => {
+    const target = p.toLowerCase();
+    for (const [id, openedPath] of electronPathMap.entries()) {
+      if (openedPath.toLowerCase() === target) return id;
+    }
+    return null;
+  }, []);
+
+  const openFromPath = useCallback(async (filePath: string) => {
+    if (!filePath) return;
+    if (!window.electronAPI) {
+      alert("当前不是 Electron 环境，无法直接读取本地路径。");
+      return;
+    }
+
+    const existedId = findTabIdByPath(filePath);
+    if (existedId) {
+      setActiveId(existedId);
+      return;
+    }
+
+    const data = await window.electronAPI.readPdf(filePath);
+    if (!data) {
+      window.electronAPI.showAlert?.({
+        type: "error",
+        title: "Error!",
+        message: langMap["fileReadError"] || "文件读取失败，请确认文件存在且为 PDF 格式。",
+      });
+      return;
+    }
+
+    const name = filePath.split(/[\\/]/).pop() || "document.pdf";
+    const bytes = Uint8Array.from(data);
+    const file = new File([new Blob([bytes], { type: "application/pdf" })], name, {
+      type: "application/pdf",
+      lastModified: Date.now(),
+    });
+
+    const id = await add(file, filePath);
+    electronPathMap.set(id, filePath);
+
+    setTabs((currentTabs) => (
+      currentTabs.some((tab) => tab.id === id)
+        ? currentTabs
+        : [...currentTabs, { id, title: file.name }]
+    ));
+    setActiveId(id);
+
+    setRecents((currentRecents) => {
+      const lowerPath = filePath.toLowerCase();
+      const nextItem: RecentFile = {
+        name: file.name,
+        sizeKB: Math.max(1, Math.round(bytes.byteLength / 1024)),
+        date: new Date().toISOString().slice(0, 10),
+        path: filePath,
+        docId: id,
+      };
+      const filtered = currentRecents.filter((item) => item.path?.toLowerCase() !== lowerPath);
+      return [nextItem, ...filtered].slice(0, MAX_RECENTS);
+    });
+  }, [add, findTabIdByPath, langMap]);
+
+  const openWithElectron = useCallback(async () => {
+    if (!window.electronAPI) {
+      alert("当前不是 Electron 环境，无法直接打开本地文件。");
+      return;
+    }
+
+    const filePath = await window.electronAPI.openPdf();
+    if (filePath) {
+      await openFromPath(filePath);
+    }
+  }, [openFromPath]);
 
   useEffect(() => {
     if (!window.electronAPI) return;
@@ -199,47 +282,38 @@ export default function App() {
     const off = window.electronAPI.onOpenPath?.(async (p: string) => {
       console.log("[renderer] on open-path:", p);
       try {
-        await openFromPath(p); // Internally, we need to do deduplication of "switch if already turned on"
+        await openFromPath(p);
       } catch (e) {
         console.error("openFromPath failed:", e);
       }
     });
 
-    // Notify the main process only once: I am ready to receive the path
     if (!restored.current) {
       window.electronAPI.notifyReady?.();
       restored.current = true;
     }
 
-    return () => off && off();
+    return () => off?.();
   }, [openFromPath]);
 
-
-  useEffect(() => {
-    if (activeId) navigate(`/viewer/${activeId}`);
-    else navigate(`/`); // back to MainScreen
-  }, [activeId, navigate]);
-
-  const closeTab = async (id: string) => {
+  const closeTab = useCallback(async (id: string) => {
     const idx = tabs.findIndex((x) => x.id === id);
     const newTabs = tabs.filter((x) => x.id !== id);
 
     if(documentStates.current[id]){
-      let choice = await window.electronAPI!.askUser();
-      if(choice == 0){
+      const choice = await window.electronAPI!.askUser();
+      if(choice === 0){
         const saveFn = saveActions.current[id]; 
         if (saveFn) {
           await saveFn();
         }
       }
-      else if(choice == 1){
-
-      }
-      else{
+      else if(choice !== 1){
         return;
       }
     }
     electronPathMap.delete(id); // Release path mapping
+    unregisterSaveAction(id);
     setTabs(newTabs);
 
     if (activeId === id) {
@@ -249,78 +323,22 @@ export default function App() {
     
     
     localStorage.removeItem("marks::" + id);
-  };
+  }, [activeId, tabs, unregisterSaveAction]);
 
-  async function openWithElectron() {
-    if (!window.electronAPI) {
-      alert("当前不是 Electron 环境，无法直接打开本地文件。");
-      return;
-    }
-    
-    const filePath = await window.electronAPI.openPdf();
-    if (!filePath) return;
-    const existedId = findTabIdByPath(filePath);
-  
-    if (existedId) {
-      setActiveId(existedId);
-      return;
-    }
-    
-    const data = await window.electronAPI.readPdf(filePath);
-
-    // Construct a File, using existing add(file) logic (for generating an id and passing it to the viewer)
-    const name = filePath.split(/[\\/]/).pop() || "document.pdf";
-    const bytes = Uint8Array.from(data);
-    const file = new File([new Blob([bytes], { type: "application/pdf" })], name, {
-      type: "application/pdf",
-      lastModified: Date.now(),
-    });
-
-    const id = await add(file,filePath); // Use file content hash as unique id
-    const title = file.name;
-    
-    setTabs((t) => [...t, { id, title }]);
-    setActiveId(id);
-
-    // Recent list
-    if (recents.find((r) => r.path === filePath)) {
-        return;
-    }
-    setRecents((r) => {
-    const newItem = {
-      name: file.name,
-      sizeKB: Math.max(1, Math.round(data.byteLength / 1024)),
-      date: new Date().toISOString().slice(0, 10),
-      path: filePath,
-      docId: id,
-    };
-
-
-    const filtered = r.filter(item => item.path !== newItem.path);
-
-
-    const updated = [newItem, ...filtered];
-
-
-    return updated.slice(0, MAX_RECENTS);
-  });;
-    
-
-
-    electronPathMap.set(id, filePath);
-  }
-  function saveRecentList(){
-    if(recents.length>=0)
-      localStorage.setItem("recents",JSON.stringify(recents))
-    else
-      return;
-  }
+  const saveRecentList = useCallback(() => {
+    localStorage.setItem("recents", JSON.stringify(recents));
+  }, [recents]);
   useEffect(()=>{
     const rs = localStorage.getItem("recents");
     if(rs){
-      setRecents(JSON.parse(rs));
+      try {
+        const parsed = JSON.parse(rs);
+        setRecents(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setRecents([]);
+      }
     }else{
-      localStorage.setItem("recents",[].toString());
+      localStorage.setItem("recents", JSON.stringify([]));
     }
 
   },[])
@@ -335,97 +353,30 @@ export default function App() {
     saveRecentList();
 
     const keep = new Set(recents.map(r => r?.docId).filter(Boolean) as string[]);
-    console.log("KEEP",keep);
     
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i)!;
 
       // 只处理 marks:: 前缀的键，其他键（lang/recents/设置项）跳过
       if (k.endsWith("ctx")){
-        let docId = k.slice(0, -3);
+        const docId = k.slice(0, -3);
         if (!keep.has(docId)) {
         localStorage.removeItem(k); // 直接删当前键 k
       }
       }
       
     }
-  },[recents])
+  },[recents, saveRecentList])
 
 
 
-  async function onOpenTab(_e: React.MouseEvent<HTMLButtonElement>) {
+  const onOpenTab = useCallback(async () => {
     await openWithElectron();
-  }
+  }, [openWithElectron]);
 
-  function onSelectTab(id: string) {
+  const onSelectTab = useCallback((id: string) => {
     setActiveId(id);
-  }
-
-  function findTabIdByPath(p: string): string | null {
-    const target = p.toLowerCase();
-    for (const [id, openedPath] of electronPathMap.entries()) {
-      if (openedPath.toLowerCase() === target) return id;
-    }
-  return null;
-}
-
-async function openFromPath(filePath: string) {
-  if (!filePath) return;
-  if (!window.electronAPI) {
-    alert("当前不是 Electron 环境，无法直接读取本地路径。");
-    return;
-  }
-
-  // Already open → Switch directly
-  const existedId = findTabIdByPath(filePath);
-  
-  if (existedId) {
-    setActiveId(existedId);
-    return;
-  }
-
-
-  const data = await window.electronAPI.readPdf(filePath);
-
-  
-  if (!data) {
-    window.electronAPI.showAlert?.({type: "error", title: "Error!", message: langMap["fileReadError"]||"文件读取失败，请确认文件存在且为 PDF 格式。"});
-    return;
-  }
-  const name = filePath.split(/[\\/]/).pop() || "document.pdf";
-  const bytes = Uint8Array.from(data);
-  const file = new File([new Blob([bytes], { type: "application/pdf" })], name, {
-    type: "application/pdf",
-    lastModified: Date.now(),
-  });
-
-  // add(file) will generate a unique id
-  const id = await add(file, filePath); 
-  const title = file.name;
-
-
-  setTabs((t) => [...t, { id, title }]);
-  setActiveId(id);
-
-
-  setRecents((r) => {
-    const lower = filePath.toLowerCase();
-    const filtered = r.filter((i) => i.path?.toLowerCase() !== lower);
-    return [
-      {
-        name: file.name,
-        sizeKB: Math.max(1, Math.round((data as Uint8Array).byteLength / 1024)),
-        date: new Date().toISOString().slice(0, 10),
-        path: filePath,
-        docId: id,
-      },
-      ...filtered,
-    ];
-  });
-
-  // Record mapping relationship (for "open judgment" and saving)
-  electronPathMap.set(id, filePath);
-}
+  }, []);
 
   useEffect(() => {
     setLangMap(language === "zh" ? lang_zh : language === "en" ? lang_en : lang_du);
@@ -437,14 +388,71 @@ async function openFromPath(filePath: string) {
   useEffect(()=>{
     const lang = localStorage.getItem("lang")||"zh";
     setLang(lang);
-    langRef.current = lang;
     setLangMap(lang === "zh" ? lang_zh : lang === "en" ? lang_en : lang_du);
   },[])
 
-  return (
-    <div className="h-screen flex flex-col">
+  useEffect(() => {
+    const handleCopyHotkey = async (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyC") return;
 
-      <header className="h-10 backdrop-blur-md bg-blue-100/60 border-b border-blue-200/50 flex items-center px-6 justify-between shadow-sm">
+      const text = window.getSelection()?.toString() ?? "";
+      if (!text) return;
+
+      e.preventDefault();
+
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+      } catch (err) {
+        console.warn("[copy hotkey] write failed:", err);
+      }
+    };
+
+    document.addEventListener("keydown", handleCopyHotkey, { capture: true });
+    return () => {
+      document.removeEventListener("keydown", handleCopyHotkey, { capture: true });
+    };
+  }, []);
+
+  const outletContext = useMemo<AppOutletCtx>(() => ({
+    onOpenTab,
+    savePdfCtx,
+    openWithElectron,
+    recents,
+    openFromPath,
+    langMap,
+    deleteContext,
+    documentStates,
+    registerSaveAction,
+    unregisterSaveAction,
+    sendValueToMain: window.electronAPI?.sendValueToMain,
+  }), [
+    onOpenTab,
+    savePdfCtx,
+    openWithElectron,
+    recents,
+    openFromPath,
+    langMap,
+    deleteContext,
+    documentStates,
+    registerSaveAction,
+    unregisterSaveAction,
+  ]);
+
+  return (
+    <div className="h-screen min-w-0 overflow-hidden flex flex-col">
+
+      <header className="min-h-10 shrink-0 backdrop-blur-md bg-blue-100/60 border-b border-blue-200/50 flex items-center gap-3 px-3 sm:px-6 justify-between shadow-sm">
         <TabBar
           tabs={tabs}
           activeId={activeId}
@@ -452,7 +460,7 @@ async function openFromPath(filePath: string) {
           onClose={closeTab}
           onNew={onOpenTab}
         />
-        <nav className="flex space-x-6 text-sm font-medium text-slate-700">
+        <nav className="shrink-0 flex items-center gap-3 sm:gap-6 text-sm font-medium text-slate-700">
           <Link
             to="/"
             className="hover:text-blue-600 transition-colors"
@@ -468,20 +476,20 @@ async function openFromPath(filePath: string) {
           >
             设置
           </Link> */}
-          <div tabIndex={0}>
-            <LanguagesIcon className="hover:text-blue-600 transition-colors" onClick={() => {setLangMenu(!showLangMenu)} }/>
+          <div tabIndex={0} className="grid h-8 w-8 place-items-center rounded-md hover:bg-blue-200/40">
+            <LanguagesIcon className="h-5 w-5 hover:text-blue-600 transition-colors" onClick={() => setLangMenu((visible) => !visible)}/>
           </div>
           
           {showLangMenu && <div>
             <select name="language" id="language" className="bg-transparent outline-none"
               onChange={e=>{
                 const lang = e.target.value;
-                if(lang)
+                if(lang) {
                   localStorage.setItem("lang",lang);
                   setLang(lang);
-                  langRef.current = lang;
+                }
                 }}
-                  defaultValue={localStorage.getItem("lang")||"zh"}
+                  value={language}
               >
               <option value="zh">中文</option>
               <option value="en">English</option>
@@ -492,56 +500,12 @@ async function openFromPath(filePath: string) {
       </header>
 
       {/* Main body */}
-      <div className="flex flex-1 min-h-0">
-        <main className="flex-1 overflow-auto min-h-0">
-          <Outlet context={{ onOpenTab, savePdfCtx,openWithElectron ,recents,openFromPath,langMap,deleteContext,documentStates,registerSaveAction, unregisterSaveAction}} key={location.pathname} />
+      <div className="flex flex-1 min-h-0 min-w-0">
+        <main className="flex-1 overflow-hidden min-h-0 min-w-0">
+          <Outlet context={outletContext} key={location.pathname} />
         </main>
       </div>
     </div>
   );
 }
 
-/* ---------------- Zustand ---------------- */
-
-
-type Doc = { id: string; file: File; path?: string };
-
-type DocStore = {
-  docs: Record<string, Doc>;
-  add: (file: File, path?: string) => Promise<string>;
-};
-
-export const useDocStore = create<DocStore>((set) => ({
-  docs: {},
-  add: async (file, path) => {
-    const buf = await file.arrayBuffer();
-    const id = await sha256Hex(buf);
-    set((s) => ({ docs: { ...s.docs, [id]: { id, file, path } } }));
-    return id;
-  },
-}));
-
-document.addEventListener('keydown', async (e) => {
-    if (!(e.ctrlKey || e.metaKey) || e.code !== 'KeyC') return;
-
-    const text = window.getSelection()?.toString() ?? '';
-    if (!text) return;
-
-    e.preventDefault();
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else if ((window as any).electron?.clipboardWriteText) {
-
-        (window as any).electron.clipboardWriteText(text);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        document.body.appendChild(ta); ta.select();
-        document.execCommand('copy'); ta.remove();
-      }
-    } catch (err) {
-      console.warn('[copy hotkey] write failed:', err);
-    }
-  }, { capture: true });

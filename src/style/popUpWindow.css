@@ -17,6 +17,9 @@
   -webkit-backdrop-filter: blur(14px);
 
   padding: 6px 0;
+  max-width: min(180px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
 }
 
 .pop > ul {
@@ -24,6 +27,7 @@
   margin: 0;
   padding: 0;
   width: 140px;
+  max-width: 100%;
   font-size: 14px;
   color: #0f2b5b;
 }
@@ -32,6 +36,9 @@
   padding: 8px 12px;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   border-bottom: 1px solid rgba(255, 255, 255, 0.5);
   transition: background 0.15s ease, color 0.15s ease;

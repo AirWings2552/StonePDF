@@ -8,7 +8,6 @@ import { PDFDocument } from "pdf-lib";
 
 export default function MainScreen() {
   const [query, setQuery] = useState("");
-  const [_localrecents, setRecents] = useState<Array<{ name: string; sizeKB: number; date: string ;docId:string}>>([]);
   const { openWithElectron, recents,openFromPath,langMap,deleteContext} = useOutletContext<AppOutletCtx>();
 
   const filtered = useMemo(() => {
@@ -19,7 +18,6 @@ export default function MainScreen() {
 
   function onOpenClick() {
     openWithElectron();
-    setRecents(recents)
   }
 
   async function reOpenFile(path: string | undefined) {
@@ -29,7 +27,7 @@ export default function MainScreen() {
       try{
         await openFromPath(path);
       }catch(e){
-        let id = recents.find(r=>r.path===path)?.docId;
+        const id = recents.find(r=>r.path===path)?.docId;
         console.log(id);
         
         if (id)
@@ -91,13 +89,13 @@ export default function MainScreen() {
     }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-[#dff0ff] via-[#eaf3ff] to-[#c5e2ff]">
+    <div className="relative h-full w-full overflow-auto bg-gradient-to-br from-[#dff0ff] via-[#eaf3ff] to-[#c5e2ff]">
       {/* Background orbs */}
       <div className="pointer-events-none absolute -top-16 -left-16 h-72 w-72 rounded-full bg-blue-400/30 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-indigo-400/30 blur-3xl" />
 
       {/* App shell */}
-      <div className="mx-auto flex max-w-6xl gap-6 px-6 py-10 lg:py-14">
+      <div className="mx-auto flex min-h-full max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:py-14">
         {/* Sidebar */}
         {/* <aside className="sticky top-8 h-fit w-64 rounded-2xl border border-white/40 bg-white/30 p-4 backdrop-blur-xl shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)]">
           <div className="mb-3 flex items-center gap-2">
@@ -126,7 +124,7 @@ export default function MainScreen() {
         </aside> */}
 
         {/* Main content */}
-        <main className="flex-1">
+        <main className="min-w-0 flex-1">
           {/* Header */}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold tracking-tight text-blue-950 md:text-3xl">StonePDF</h2>
@@ -155,14 +153,14 @@ export default function MainScreen() {
           {/* Glass panel */}
           <section className="rounded-3xl border border-white/60 bg-white/50 p-5 backdrop-blur-2xl shadow-[0_20px_60px_-20px_rgba(30,64,175,0.35)]">
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2 overflow-y-auto  max-h-[600px]">
+              <div className="min-w-0 overflow-y-auto lg:col-span-2 max-h-[calc(100vh-260px)]">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-blue-950">{langMap["recents"] || "Recents"}</h3>
                   {/* <button className="rounded-lg px-2 py-1 text-sm text-blue-900/70 transition hover:bg-blue-50/70">View all</button> */}
                 </div>
                 <ul className="divide-y divide-white/50 rounded-2xl border border-white/60 bg-white/40 backdrop-blur-xl">
                   {filtered.map((f, i) => (
-                    <li key={i} className="flex items-center justify-between gap-3 px-4 py-3" onClick={()=>reOpenFile(f.path)}>
+                    <li key={i} className="flex min-w-0 cursor-pointer items-center justify-between gap-3 px-4 py-3" onClick={()=>reOpenFile(f.path)}>
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 text-white shadow">
                           <FileText className="h-4 w-4" />
@@ -172,7 +170,7 @@ export default function MainScreen() {
                           <p className="truncate text-xs text-blue-900/70">{f.date} · {f.sizeKB} KB</p>
                         </div>
                       </div>
-                      <button className="rounded-xl border border-white/60 bg-white/60 p-2 text-blue-900/80 backdrop-blur-xl transition hover:bg-white">
+                      <button className="shrink-0 rounded-xl border border-white/60 bg-white/60 p-2 text-blue-900/80 backdrop-blur-xl transition hover:bg-white">
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
                     </li>
@@ -212,7 +210,7 @@ export default function MainScreen() {
 //   );
 // }
 
-function ActionCard({ icon: Icon, title, desc, onClick }: { icon: React.ComponentType<any>; title: string; desc: string; onClick?: () => void }) {
+function ActionCard({ icon: Icon, title, desc, onClick }: { icon: React.ComponentType<{ className?: string }>; title: string; desc: string; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -221,7 +219,7 @@ function ActionCard({ icon: Icon, title, desc, onClick }: { icon: React.Componen
       <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 text-white shadow">
         <Icon className="h-5 w-5" />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="font-medium text-blue-950">{title}</p>
         <p className="text-xs text-blue-900/70">{desc}</p>
       </div>
