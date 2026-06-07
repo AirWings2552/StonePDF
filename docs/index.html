@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="StonePDF is a PDF reader focused on internal-link preview, so you can inspect referenced formulas, figures, and sections without losing your reading flow."
+    />
+    <meta property="og:title" content="StonePDF - Read references without losing your flow" />
+    <meta
+      property="og:description"
+      content="Hover an internal PDF link to preview the referenced formula, figure, or section in a floating window."
+    />
+    <meta property="og:type" content="website" />
+    <title>StonePDF - Internal Link Preview for PDFs</title>
+    <link rel="icon" href="./assets/stonepdf-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="StonePDF home">
+        <img src="./assets/stonepdf-mark.svg" alt="" />
+        <span>StonePDF</span>
+      </a>
+      <div class="header-actions">
+        <nav aria-label="Main navigation">
+          <a href="#preview" data-i18n="nav.preview">核心功能</a>
+          <a href="#features" data-i18n="nav.features">更多功能</a>
+          <a href="#download" data-i18n="nav.download">下载</a>
+          <a href="https://github.com/AirWings2552/StonePDF" rel="noreferrer">GitHub</a>
+        </nav>
+        <button class="lang-toggle" type="button" data-language-toggle aria-label="Switch language">EN</button>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-backdrop" aria-hidden="true">
+          <div class="app-window">
+            <div class="window-bar">
+              <span></span><span></span><span></span>
+              <strong>StonePDF</strong>
+            </div>
+            <div class="app-shell">
+              <aside>
+                <b>Contents</b>
+                <p>Chapter 2 - System model</p>
+                <p>Chapter 4 - Filters</p>
+                <p class="active">Chapter 7 - Applications</p>
+                <p>Appendix</p>
+              </aside>
+              <article>
+                <div class="reader-demo">
+                  <div class="pdf-page chapter-page">
+                    <p class="chapter-label">Chapter 7</p>
+                    <h3>Interference and noise cancellation</h3>
+                    <p>
+                      The adaptive filter output follows the residual error. In this section,
+                      we reuse the update rule from
+                      <a class="fake-link" href="#preview">Eq. 2.14</a>
+                      to derive the cancellation behavior without repeating the full proof.
+                    </p>
+                    <p>
+                      In a normal PDF reader, clicking that link jumps away from the current
+                      paragraph. StonePDF lets you inspect it first.
+                    </p>
+                  </div>
+                  <div class="preview-card">
+                    <div class="preview-card-bar">
+                      <span>Preview - Chapter 2</span>
+                      <button aria-label="Close preview" data-i18n-attr="aria-label:preview.closeLabel">X</button>
+                    </div>
+                    <div class="formula-preview">
+                      <p class="chapter-label">Equation 2.14</p>
+                      <div class="formula">w[k + 1] = w[k] + μ · e[k] · x[k]</div>
+                      <p>
+                        This is the referenced update rule. You can read it while staying in
+                        Chapter 7.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-content">
+          <p class="eyebrow" data-i18n="hero.eyebrow">PDF internal-link preview</p>
+          <h1 data-i18n="hero.title">公式、图表和定义，悬浮就能看。</h1>
+          <p class="lead" data-i18n="hero.lead">
+            StonePDF 的重点是内部链接预览：当第 7 章引用第 2 章的公式、图表或定义时，把鼠标悬浮在链接上，
+            目标内容会直接出现在预览窗里。你继续留在当前段落，思路不用被页面跳转打断。
+          </p>
+          <div class="hero-actions" id="download">
+            <a class="primary-button" href="https://github.com/AirWings2552/StonePDF/releases/latest" rel="noreferrer" data-i18n="actions.downloadWindows">
+              Download for Windows
+            </a>
+            <a class="secondary-button" href="https://github.com/AirWings2552/StonePDF" rel="noreferrer" data-i18n="actions.viewSource">
+              View Source
+            </a>
+          </div>
+          <p class="subtle" data-i18n="hero.meta">Version 0.7.0 · Windows 10/11 · MIT License</p>
+        </div>
+      </section>
+
+      <section class="section scenario" id="preview">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="scenario.eyebrow">Why it matters</p>
+          <h2 data-i18n="scenario.title">PDF 里的内部链接不应该打断你的思考</h2>
+        </div>
+        <div class="scenario-grid">
+          <article>
+            <span class="feature-icon">1</span>
+            <h3 data-i18n="scenario.oneTitle">看到引用</h3>
+            <p data-i18n="scenario.oneText">教材或论文常常写着 “see Eq. 2.14” 或 “as shown in Fig. 3”。你正在读第 7 章，不想跳回第 2 章。</p>
+          </article>
+          <article>
+            <span class="feature-icon">2</span>
+            <h3 data-i18n="scenario.twoTitle">悬浮预览</h3>
+            <p data-i18n="scenario.twoText">把鼠标停在内部链接上，StonePDF 会弹出目标页局部预览，直接看到公式、图表或定义。</p>
+          </article>
+          <article>
+            <span class="feature-icon">3</span>
+            <h3 data-i18n="scenario.threeTitle">继续阅读</h3>
+            <p data-i18n="scenario.threeText">确认引用内容后，鼠标移开即可回到原文。需要认真对照时，也可以固定预览窗并拖动调整大小。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section split-feature">
+        <div>
+          <p class="eyebrow" data-i18n="example.eyebrow">Example</p>
+          <h2 data-i18n="example.title">第 7 章引用第 2 章公式时</h2>
+          <p data-i18n="example.text">
+            传统阅读器会把你跳到第 2 章，再靠返回按钮找回来。StonePDF 更像是在当前页面旁边打开一个小窗口：
+            公式在旁边，原文还在眼前。
+          </p>
+        </div>
+        <div class="mini-example" aria-label="Internal link preview example">
+          <div class="mini-paper">
+            <span>Chapter 7</span>
+            <p>
+              The residual can be minimized by applying the adaptive update from
+              <a href="#download">Eq. 2.14</a>
+              before the cancellation stage.
+            </p>
+          </div>
+          <div class="mini-preview">
+            <strong>Preview - Chapter 2</strong>
+            <code>w[k + 1] = w[k] + μ · e[k] · x[k]</code>
+            <small data-i18n="example.previewNote">目标公式显示在旁边，当前段落保持不动。</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="features.eyebrow">More features</p>
+          <h2 data-i18n="features.title">围绕长文档阅读的小功能</h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span class="feature-icon">01</span>
+            <h3 data-i18n="features.pinTitle">可固定的预览窗</h3>
+            <p data-i18n="features.pinText">右键固定内部链接预览窗，拖动位置、调整大小，把引用内容放在你方便对照的位置。</p>
+          </article>
+          <article>
+            <span class="feature-icon">02</span>
+            <h3 data-i18n="features.annotationTitle">高亮与自由文本</h3>
+            <p data-i18n="features.annotationText">标出关键句，添加可拖动的自由文字框，保存自己的阅读笔记。</p>
+          </article>
+          <article>
+            <span class="feature-icon">03</span>
+            <h3 data-i18n="features.tabsTitle">多标签阅读</h3>
+            <p data-i18n="features.tabsText">同时打开多份 PDF，每个文件保留独立阅读进度和未保存状态。</p>
+          </article>
+          <article>
+            <span class="feature-icon">04</span>
+            <h3 data-i18n="features.saveTitle">保存标注</h3>
+            <p data-i18n="features.saveText">把 StonePDF 中创建的高亮和自由文本保存回 PDF，方便继续阅读或分享。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="download-panel">
+        <div>
+          <p class="eyebrow" data-i18n="download.eyebrow">Get StonePDF</p>
+          <h2 data-i18n="download.title">适合读教材、论文和技术文档</h2>
+          <p data-i18n="download.text">
+            如果你经常在 PDF 里来回跳公式、图表、章节和参考文献，StonePDF 的内部链接预览会非常有用。
+          </p>
+        </div>
+        <a class="primary-button" href="https://github.com/AirWings2552/StonePDF/releases/latest" rel="noreferrer" data-i18n="actions.downloadLatest">
+          Download Latest
+        </a>
+      </section>
+
+      <section class="section two-column" id="install">
+        <div>
+          <p class="eyebrow" data-i18n="install.eyebrow">Install</p>
+          <h2 data-i18n="install.title">安装步骤</h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <strong data-i18n="install.stepOneTitle">下载安装包</strong>
+            <span data-i18n="install.stepOneText">打开下载页，选择最新版 Windows installer。</span>
+          </li>
+          <li>
+            <strong data-i18n="install.stepTwoTitle">运行安装</strong>
+            <span data-i18n="install.stepTwoText">如果 Windows 提示未知发布者，确认来源是 StonePDF 项目后继续安装。</span>
+          </li>
+          <li>
+            <strong data-i18n="install.stepThreeTitle">打开 PDF</strong>
+            <span data-i18n="install.stepThreeText">打开教材、论文或技术文档，把鼠标悬浮在内部链接上试试预览窗。</span>
+          </li>
+        </ol>
+      </section>
+
+      <section class="section note-section">
+        <h2 data-i18n="opensource.title">开源项目</h2>
+        <p data-i18n="opensource.text">
+          StonePDF 是一个个人兴趣驱动的开源桌面软件，基于 React、PDF.js 和 Electron 构建。
+          如果你遇到问题或希望提出功能建议，可以在 GitHub 仓库中提交 issue。
+        </p>
+        <a href="https://github.com/AirWings2552/StonePDF/issues" rel="noreferrer" data-i18n="opensource.issue">Report an issue</a>
+      </section>
+    </main>
+
+    <footer>
+      <span>StonePDF</span>
+      <span>Copyright © 2026 AirWings2552</span>
+      <a href="https://github.com/AirWings2552/StonePDF/blob/main/LICENSE" rel="noreferrer">MIT License</a>
+    </footer>
+    <script>
+      const translations = {
+        zh: {
+          "meta.title": "StonePDF - PDF 内部链接悬浮预览",
+          "meta.description": "StonePDF 是一款专注 PDF 内部链接预览的阅读器，让你悬浮查看被引用的公式、图表和章节，不打断阅读思路。",
+          "nav.preview": "核心功能",
+          "nav.features": "更多功能",
+          "nav.download": "下载",
+          "preview.closeLabel": "关闭预览",
+          "hero.eyebrow": "PDF 内部链接预览",
+          "hero.title": "公式、图表和定义，悬浮就能看。",
+          "hero.lead": "StonePDF 的重点是内部链接预览：当第 7 章引用第 2 章的公式、图表或定义时，把鼠标悬浮在链接上，目标内容会直接出现在预览窗里。你继续留在当前段落，思路不用被页面跳转打断。",
+          "actions.downloadWindows": "下载 Windows 版",
+          "actions.viewSource": "查看源码",
+          "actions.downloadLatest": "下载最新版",
+          "hero.meta": "Version 0.7.0 · Windows 10/11 · MIT License",
+          "scenario.eyebrow": "为什么重要",
+          "scenario.title": "PDF 里的内部链接不应该打断你的思考",
+          "scenario.oneTitle": "看到引用",
+          "scenario.oneText": "教材或论文常常写着 “see Eq. 2.14” 或 “as shown in Fig. 3”。你正在读第 7 章，不想跳回第 2 章。",
+          "scenario.twoTitle": "悬浮预览",
+          "scenario.twoText": "把鼠标停在内部链接上，StonePDF 会弹出目标页局部预览，直接看到公式、图表或定义。",
+          "scenario.threeTitle": "继续阅读",
+          "scenario.threeText": "确认引用内容后，鼠标移开即可回到原文。需要认真对照时，也可以固定预览窗并拖动调整大小。",
+          "example.eyebrow": "例子",
+          "example.title": "第 7 章引用第 2 章公式时",
+          "example.text": "传统阅读器会把你跳到第 2 章，再靠返回按钮找回来。StonePDF 更像是在当前页面旁边打开一个小窗口：公式在旁边，原文还在眼前。",
+          "example.previewNote": "目标公式显示在旁边，当前段落保持不动。",
+          "features.eyebrow": "更多功能",
+          "features.title": "围绕长文档阅读的小功能",
+          "features.pinTitle": "可固定的预览窗",
+          "features.pinText": "右键固定内部链接预览窗，拖动位置、调整大小，把引用内容放在你方便对照的位置。",
+          "features.annotationTitle": "高亮与自由文本",
+          "features.annotationText": "标出关键句，添加可拖动的自由文字框，保存自己的阅读笔记。",
+          "features.tabsTitle": "多标签阅读",
+          "features.tabsText": "同时打开多份 PDF，每个文件保留独立阅读进度和未保存状态。",
+          "features.saveTitle": "保存标注",
+          "features.saveText": "把 StonePDF 中创建的高亮和自由文本保存回 PDF，方便继续阅读或分享。",
+          "download.eyebrow": "获取 StonePDF",
+          "download.title": "适合读教材、论文和技术文档",
+          "download.text": "如果你经常在 PDF 里来回跳公式、图表、章节和参考文献，StonePDF 的内部链接预览会非常有用。",
+          "install.eyebrow": "安装",
+          "install.title": "安装步骤",
+          "install.stepOneTitle": "下载安装包",
+          "install.stepOneText": "打开下载页，选择最新版 Windows installer。",
+          "install.stepTwoTitle": "运行安装",
+          "install.stepTwoText": "如果 Windows 提示未知发布者，确认来源是 StonePDF 项目后继续安装。",
+          "install.stepThreeTitle": "打开 PDF",
+          "install.stepThreeText": "打开教材、论文或技术文档，把鼠标悬浮在内部链接上试试预览窗。",
+          "opensource.title": "开源项目",
+          "opensource.text": "StonePDF 是一个个人兴趣驱动的开源桌面软件，基于 React、PDF.js 和 Electron 构建。如果你遇到问题或希望提出功能建议，可以在 GitHub 仓库中提交 issue。",
+          "opensource.issue": "提交 issue"
+        },
+        en: {
+          "meta.title": "StonePDF - Internal Link Preview for PDFs",
+          "meta.description": "StonePDF is a PDF reader focused on internal-link preview, so you can inspect referenced formulas, figures, and sections without losing your reading flow.",
+          "nav.preview": "Core feature",
+          "nav.features": "More features",
+          "nav.download": "Download",
+          "preview.closeLabel": "Close preview",
+          "hero.eyebrow": "PDF internal-link preview",
+          "hero.title": "Hover to preview formulas, figures, and definitions.",
+          "hero.lead": "StonePDF focuses on internal-link preview: when Chapter 7 references a formula, figure, or definition from Chapter 2, hover the link and the target appears in a preview window. You stay in the current paragraph and keep your reading flow intact.",
+          "actions.downloadWindows": "Download for Windows",
+          "actions.viewSource": "View Source",
+          "actions.downloadLatest": "Download Latest",
+          "hero.meta": "Version 0.7.0 · Windows 10/11 · MIT License",
+          "scenario.eyebrow": "Why it matters",
+          "scenario.title": "Internal PDF links should not interrupt your thinking",
+          "scenario.oneTitle": "Meet a reference",
+          "scenario.oneText": "Textbooks and papers often say “see Eq. 2.14” or “as shown in Fig. 3”. You are reading Chapter 7 and do not want to jump back to Chapter 2.",
+          "scenario.twoTitle": "Hover to preview",
+          "scenario.twoText": "Place your cursor on an internal link and StonePDF opens a local preview of the target page, showing the formula, figure, or definition directly.",
+          "scenario.threeTitle": "Keep reading",
+          "scenario.threeText": "After checking the reference, move your cursor away and continue. For careful comparison, you can also pin the preview window, drag it, and resize it.",
+          "example.eyebrow": "Example",
+          "example.title": "When Chapter 7 references a Chapter 2 formula",
+          "example.text": "A traditional reader jumps you to Chapter 2, then asks you to find your way back. StonePDF feels more like opening a small window beside the current page: the formula is nearby, and the original text remains in view.",
+          "example.previewNote": "The referenced formula appears beside the paragraph, while the current page stays put.",
+          "features.eyebrow": "More features",
+          "features.title": "Small tools for long-document reading",
+          "features.pinTitle": "Pinnable preview window",
+          "features.pinText": "Right-click to pin an internal-link preview, drag it, resize it, and place the reference wherever it is easiest to compare.",
+          "features.annotationTitle": "Highlights and free text",
+          "features.annotationText": "Mark important passages, add movable free-text notes, and save your reading notes.",
+          "features.tabsTitle": "Tabbed reading",
+          "features.tabsText": "Open multiple PDFs at once. Each file keeps its own reading position and unsaved-change state.",
+          "features.saveTitle": "Save annotations",
+          "features.saveText": "Save highlights and free-text notes created in StonePDF back into the PDF for later reading or sharing.",
+          "download.eyebrow": "Get StonePDF",
+          "download.title": "Built for textbooks, papers, and technical documents",
+          "download.text": "If you often jump between formulas, figures, chapters, and references in PDFs, StonePDF's internal-link preview can save a lot of context switching.",
+          "install.eyebrow": "Install",
+          "install.title": "Install steps",
+          "install.stepOneTitle": "Download the installer",
+          "install.stepOneText": "Open the download page and choose the latest Windows installer.",
+          "install.stepTwoTitle": "Run setup",
+          "install.stepTwoText": "If Windows warns about an unknown publisher, confirm the source is the StonePDF project before continuing.",
+          "install.stepThreeTitle": "Open a PDF",
+          "install.stepThreeText": "Open a textbook, paper, or technical document, then hover an internal link to try the preview window.",
+          "opensource.title": "Open source",
+          "opensource.text": "StonePDF is a personal open-source desktop app built with React, PDF.js, and Electron. If you run into a problem or want to suggest a feature, open an issue on GitHub.",
+          "opensource.issue": "Report an issue"
+        }
+      };
+
+      const storageKey = "stonepdf-language";
+      const getBrowserLanguage = () => {
+        const languages = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+        return languages.some((language) => String(language).toLowerCase().startsWith("zh")) ? "zh" : "en";
+      };
+      const getSavedLanguage = () => {
+        try {
+          return localStorage.getItem(storageKey);
+        } catch {
+          return null;
+        }
+      };
+      const saveLanguage = (language) => {
+        try {
+          localStorage.setItem(storageKey, language);
+        } catch {
+          // Ignore private browsing or locked storage.
+        }
+      };
+      const setLanguage = (language, shouldSave = false) => {
+        const dictionary = translations[language] || translations.en;
+        document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+        document.documentElement.dataset.lang = language;
+        document.title = dictionary["meta.title"];
+        const description = document.querySelector('meta[name="description"]');
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        const ogDescription = document.querySelector('meta[property="og:description"]');
+        if (description) description.setAttribute("content", dictionary["meta.description"]);
+        if (ogTitle) ogTitle.setAttribute("content", dictionary["meta.title"]);
+        if (ogDescription) ogDescription.setAttribute("content", dictionary["meta.description"]);
+        document.querySelectorAll("[data-i18n]").forEach((node) => {
+          const text = dictionary[node.dataset.i18n];
+          if (text) node.textContent = text;
+        });
+        document.querySelectorAll("[data-i18n-attr]").forEach((node) => {
+          node.dataset.i18nAttr.split(",").forEach((pair) => {
+            const [attribute, key] = pair.split(":");
+            const value = dictionary[key];
+            if (attribute && value) node.setAttribute(attribute, value);
+          });
+        });
+        const toggle = document.querySelector("[data-language-toggle]");
+        if (toggle) {
+          toggle.textContent = language === "zh" ? "EN" : "中文";
+          toggle.setAttribute("aria-label", language === "zh" ? "Switch to English" : "Switch to Chinese");
+        }
+        if (shouldSave) saveLanguage(language);
+      };
+
+      const initialLanguage = getSavedLanguage() || getBrowserLanguage();
+      setLanguage(initialLanguage);
+      document.querySelector("[data-language-toggle]")?.addEventListener("click", () => {
+        const nextLanguage = document.documentElement.dataset.lang === "zh" ? "en" : "zh";
+        setLanguage(nextLanguage, true);
+      });
+    </script>
+  </body>
+</html>
